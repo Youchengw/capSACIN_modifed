@@ -1,0 +1,20 @@
+Some example input configurations for generating capsid surfaces:
+
+# Different .pdb file examples
+python sliceCapsid.py --pdb 9jjh --weight 0.5 --refindex 1058 --symmetry 5
+python sliceCapsid.py --pdb 3ra2 --weight 0.5 --refindex 928 --symmetry 5
+
+# 5-fold example
+python sliceCapsid.py --pdb 1k3v --weight 0.55 --refindex 959 --symmetry 5
+
+# 2-fold example
+python sliceCapsid.py --pdb 1k3v --weight 0.55 --refindex 4073 --symmetry 2
+
+# 3-fold example
+python sliceCapsid.py --pdb 1k3v --weight 0.55 --refindex 3131 --symmetry 3
+
+# 5-fold example, big weight
+python sliceCapsid.py --pdb 1k3v --weight 0.7 --refindex 959 --symmetry 5
+
+# 5-fold example, small weight
+python sliceCapsid.py --pdb 1k3v --weight 0.3 --refindex 959 --symmetry 5
