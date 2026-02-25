@@ -4,7 +4,7 @@ Thank you for your interest in our project! This repository contains all necessa
 ## Citation
 If you use this repository in your research, please cite the following articles:
 
-> Jonathan W. P. Zajac, Idris Tohidian, Praveen Muralikrishnan, Caryn L. Heldt, Sarah L. Perry, Sapna Sarupria. "Cracking the Capsid Code: A Computationally-Feasible Approach for Investigating Virus-Excipient Interactions in Biologics Design" (2025) bioRxiv. doi: 10.1101/2025.09.04.674344
+> Jonathan W. P. Zajac, Idris Tohidian, Praveen Muralikrishnan, Caryn L. Heldt, Sarah L. Perry, Sapna Sarupria. "Cracking the Capsid Code: A Computationally-Feasible Approach for Investigating Virus-Excipient Interactions in Biologics Design" (2026) J. Chem. Theory Comput. doi: 10.1021/acs.jctc.5c01810
 
 ## Repository Structure
 
