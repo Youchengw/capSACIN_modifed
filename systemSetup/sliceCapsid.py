@@ -8,7 +8,7 @@ from mpl_toolkits.mplot3d import Axes3D
 import MDAnalysis as md
 from tqdm import tqdm
 import pandas as pd
-from capsacin import definePlane, formatPDB, createDictionary
+from capsacin import definePlane, formatPDB, createDictionary, findSymmetryAxes
 import copy
 import os
 
@@ -34,6 +34,34 @@ def rotationMatrix(vec1, vec2):
     rotation_matrix = np.eye(3) + kmat + kmat.dot(kmat) * ((1 - c) / (s ** 2))
     return rotation_matrix
 
+def print_axis_table(rows, has_roi=False):
+    if len(rows) == 0:
+        print("[axes] No axes found.")
+        return
+
+    if has_roi:
+        print("[axes] rank axis-index roi-score roi-angle-deg roi-line-dist symmetry-score axis")
+        for rank, row in enumerate(rows):
+            axis = row["axis"]
+            print(
+                "[axes] "
+                f"{rank:>4} {row['axis_index']:>10} "
+                f"{row['roi_score']:.5f} {row['roi_angle_deg']:.3f} "
+                f"{row['roi_line_distance']:.3f} {row['score']:.5f} "
+                f"[{axis[0]:.5f}, {axis[1]:.5f}, {axis[2]:.5f}]"
+            )
+    else:
+        print("[axes] rank axis-index symmetry-score ref-index ref-frame chain axis")
+        for rank, row in enumerate(rows):
+            axis = row["axis"]
+            print(
+                "[axes] "
+                f"{rank:>4} {row['axis_index']:>10} {row['score']:.5f} "
+                f"{row['ref_index']:>9} {row['ref_frame']:>9} "
+                f"{row['chain_id']} "
+                f"[{axis[0]:.5f}, {axis[1]:.5f}, {axis[2]:.5f}]"
+            )
+
 def main(args):
     # CLI options
     output_title = args.pdb
@@ -43,10 +71,47 @@ def main(args):
     weight = args.weight
     brokenResCheck = True
     rotationCheck = True
+    auto_mode = args.auto
+    axis_index = args.axis_index
+    roi_selection = args.roi_selection
+    roi_frame = args.roi_frame
 
     gro=f"input/{output_title}.pdb"
     traj=f"input/{output_title}.pdb"
     u=md.Universe(gro, traj)
+
+    if args.list_axes:
+        axis_rows = findSymmetryAxes.list_axes(
+            u,
+            symmetry,
+            roi_selection=roi_selection,
+            roi_frame=roi_frame,
+        )
+        print_axis_table(axis_rows, has_roi=bool(roi_selection))
+        if not auto_mode:
+            return
+
+    if roi_selection and not auto_mode:
+        print("[roi] --roi-selection is only used with --auto or --list-axes.")
+
+    # --- Auto-detect symmetry axis and reference atoms ---
+    auto_ref_indices = None  # [pointA_idx, pointB_idx, pointC_idx]
+    if auto_mode:
+        auto_ref_indices, axis_dir, auto_frames = findSymmetryAxes.auto_detect_reference(
+            u,
+            symmetry,
+            axis_index=axis_index,
+            roi_selection=roi_selection,
+            roi_frame=roi_frame,
+        )
+        indicesVMD = [auto_ref_indices[0]]  # pointA for backward compat
+        if roi_selection:
+            print(f"[auto] ROI selection: {roi_selection!r} on frame {roi_frame}")
+            print(f"[auto] Using ROI-ranked {symmetry}-fold axis at rank {axis_index}")
+        print(f"[auto] Detected {symmetry}-fold axis: {axis_dir}")
+        print(f"[auto] Reference atom indices: {auto_ref_indices}")
+        print(f"[auto] Reference frames: {auto_frames}")
+    # ----------------------------------------------------
 
     origChains = np.unique(u.select_atoms("protein").chainIDs)
     nMonomers = len(origChains)
@@ -54,6 +119,26 @@ def main(args):
     # Reference position
     refPos = u.select_atoms(f"protein and index {indicesVMD[0]}")
     pointA = refPos.positions[0]
+
+    # In auto mode, get pointB and pointC directly from the detected monomers.
+    # This bypasses the nearest-neighbour distance heuristic, which can fail
+    # for certain atom choices.
+    if auto_mode and auto_ref_indices is not None:
+        # pointB from the second detected monomer
+        u.trajectory[auto_frames[1]]
+        refPosB_md = u.select_atoms(f"protein and index {auto_ref_indices[1]}")
+        pointB = refPosB_md.positions[0].copy()
+        # pointC from the third detected monomer
+        u.trajectory[auto_frames[2]]
+        refPosC_md = u.select_atoms(f"protein and index {auto_ref_indices[2]}")
+        pointC = refPosC_md.positions[0].copy()
+        # Return to first monomer for pointA
+        u.trajectory[auto_frames[0]]
+        refPosA_md = u.select_atoms(f"protein and index {auto_ref_indices[0]}")
+        pointA = refPosA_md.positions[0].copy()
+        # Apply the same z-perturbation as the manual path for consistency
+        pointB[2] += 0.1
+        pointC[2] -= 0.1
 
     # Dictionary for broken residue check
     aminoAcidChecks = createDictionary.createDictionary(u)
@@ -131,25 +216,26 @@ def main(args):
 
     coords = np.vstack((xChain, yChain, zChain)).T
 
-    # Symmetric reference points
-    candidatePoints = chains[(chains.resids == refPos.resids[0]) & (chains.resname == refPos.resnames[0]) & (chains.name == refPos.names[0])]
-    candidateCoords = np.vstack((candidatePoints.x, candidatePoints.y, candidatePoints.z)).T
-    from MDAnalysis.analysis import contacts
-    distMatrix = contacts.distance_array(pointA, candidateCoords)
-    distMatrix = np.vstack((candidatePoints.idx, distMatrix)).T
-    distMatrixS = np.argsort(distMatrix[:,1])
+    # Symmetric reference points (manual mode only)
+    if not (auto_mode and auto_ref_indices is not None):
+        candidatePoints = chains[(chains.resids == refPos.resids[0]) & (chains.resname == refPos.resnames[0]) & (chains.name == refPos.names[0])]
+        candidateCoords = np.vstack((candidatePoints.x, candidatePoints.y, candidatePoints.z)).T
+        from MDAnalysis.analysis import contacts
+        distMatrix = contacts.distance_array(pointA, candidateCoords)
+        distMatrix = np.vstack((candidatePoints.idx, distMatrix)).T
+        distMatrixS = np.argsort(distMatrix[:,1])
 
-    if symmetry == 3:
-        k1, k2 = 1, 2
-    elif symmetry == 5:
-        k1, k2 = 1, 3
-    elif symmetry == 2:
-        k1, k2 = 0, 1
-        
-    refPosB = candidatePoints[(candidatePoints.idx == candidatePoints.idx.values[distMatrixS[k1]])]
-    refPosC = candidatePoints[(candidatePoints.idx == candidatePoints.idx.values[distMatrixS[k2]])]
-    pointB = np.reshape(np.array(np.vstack((refPosB.x, refPosB.y, refPosB.z+0.1)).T, dtype=float).T, (3,))
-    pointC = np.reshape(np.array(np.vstack((refPosC.x, refPosC.y, refPosC.z-0.1)).T, dtype=float).T, (3,))
+        if symmetry == 3:
+            k1, k2 = 1, 2
+        elif symmetry == 5:
+            k1, k2 = 1, 3
+        elif symmetry == 2:
+            k1, k2 = 0, 1
+
+        refPosB = candidatePoints[(candidatePoints.idx == candidatePoints.idx.values[distMatrixS[k1]])]
+        refPosC = candidatePoints[(candidatePoints.idx == candidatePoints.idx.values[distMatrixS[k2]])]
+        pointB = np.reshape(np.array(np.vstack((refPosB.x, refPosB.y, refPosB.z+0.1)).T, dtype=float).T, (3,))
+        pointC = np.reshape(np.array(np.vstack((refPosC.x, refPosC.y, refPosC.z-0.1)).T, dtype=float).T, (3,))
 
     # Alignment
     points = pd.DataFrame(np.vstack((pointA, pointB, pointC)), columns=['x', 'y', 'z'])
@@ -160,7 +246,14 @@ def main(args):
     selectPoints = selectPoints - com
     x, y, z = selectPoints[:,0], selectPoints[:,1], selectPoints[:,2]
 
-    normalVector = definePlane.definePlane(x,y,z)
+    # In auto mode, use the detected axis directly as the alignment normal.
+    # This is more robust than the 3-point plane method since the axis was
+    # found by a global symmetry search.
+    if auto_mode and auto_ref_indices is not None:
+        normalVector = axis_dir
+        print(f"[auto] Using detected axis as alignment normal (bypassing 3-point method)")
+    else:
+        normalVector = definePlane.definePlane(x,y,z)
     zAxis = [0,0,1]
 
     if rotationCheck:
@@ -316,6 +409,10 @@ if __name__ == "__main__":
     parser.add_argument("--plot", action='store_true', help="Enable plotting")
     parser.add_argument("--refindex", type=int, nargs="+", default=[1058], help="Reference indices for plane")
     parser.add_argument("--weight", type=float, default=0.5, help="Slicing weight from 0 to 1")
+    parser.add_argument("--auto", action="store_true", help="Automatically detect symmetry axis and reference atom")
+    parser.add_argument("--axis-index", type=int, default=0, help="Which candidate axis to use (0=best; ROI-ranked when --roi-selection is set)")
+    parser.add_argument("--roi-selection", type=str, default=None, help="MDAnalysis selection for ROI-aware automatic axis selection")
+    parser.add_argument("--roi-frame", type=int, default=0, help="Frame/MODEL containing the ROI copy described by --roi-selection")
+    parser.add_argument("--list-axes", action="store_true", help="Print candidate axes and exit unless --auto is also set")
     args = parser.parse_args()
     main(args)
-

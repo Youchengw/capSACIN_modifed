@@ -1,5 +1,23 @@
 Some example input configurations for generating capsid surfaces:
 
+# === AUTO mode (no --refindex needed!) ===
+# Automatically detects symmetry axes and reference atoms
+python sliceCapsid.py --pdb 1k3v --symmetry 5 --weight 0.7 --auto
+python sliceCapsid.py --pdb 1k3v --symmetry 3 --weight 0.7 --auto
+python sliceCapsid.py --pdb 1k3v --symmetry 2 --weight 0.7 --auto
+
+# Auto-detect on any capsid structure
+python sliceCapsid.py --pdb 9jjh --weight 0.5 --symmetry 5 --auto
+python sliceCapsid.py --pdb 3ra2 --weight 0.5 --symmetry 5 --auto
+
+# === ROI-aware AUTO mode ===
+# Rank axes by distance/angle to an ROI on MODEL/frame 0, then slice using
+# the top-ranked axis. --axis-index can be used to choose another printed rank.
+python sliceCapsid.py --pdb 1k3v --symmetry 5 --roi-selection "protein and resid 250:290" --list-axes
+python sliceCapsid.py --pdb 1k3v --symmetry 5 --weight 0.7 --auto --roi-selection "protein and resid 250:290"
+python sliceCapsid.py --pdb 1k3v --symmetry 3 --weight 0.7 --auto --roi-selection "protein and resid 250:290" --axis-index 0
+
+# === MANUAL mode (legacy, requires user-provided reference index) ===
 # Different .pdb file examples
 python sliceCapsid.py --pdb 9jjh --weight 0.5 --refindex 1058 --symmetry 5
 python sliceCapsid.py --pdb 3ra2 --weight 0.5 --refindex 928 --symmetry 5

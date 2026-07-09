@@ -1,0 +1,16 @@
+.DS_Store
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Generated outputs
+output/
+systemSetup/output/
+
+# Local environments
+.venv/
+venv/
+envs/
+
+# Large/local reference files
+*.pdf
