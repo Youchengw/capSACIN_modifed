@@ -2,8 +2,8 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.9](https://img.shields.io/badge/python-3.9-blue.svg)](https://www.python.org/downloads/)
-[![Release v0.1.0](https://img.shields.io/badge/release-v0.1.0-2ea44f.svg)](https://github.com/Youchengw/capSACIN_modifed/releases/tag/v0.1.0)
-[![macOS Apple Silicon](https://img.shields.io/badge/macOS-Apple%20Silicon-black.svg)](https://github.com/Youchengw/capSACIN_modifed/releases/download/v0.1.0/capSACIN-Studio-v0.1.0-macOS-arm64.dmg)
+[![Release v0.1.1](https://img.shields.io/badge/release-v0.1.1-2ea44f.svg)](https://github.com/Youchengw/capSACIN_modifed/releases/tag/v0.1.1)
+[![macOS Apple Silicon](https://img.shields.io/badge/macOS-Apple%20Silicon-black.svg)](https://github.com/Youchengw/capSACIN_modifed/releases/download/v0.1.1/capSACIN-Studio-v0.1.1-macOS-arm64.dmg)
 
 A computational framework for constructing atomistic surface models of icosahedral virus capsids, enabling high-throughput molecular dynamics simulations of virus–excipient interactions without the prohibitive cost of simulating fully assembled capsids.
 
@@ -15,11 +15,11 @@ A computational framework for constructing atomistic surface models of icosahedr
 
 ### Download
 
-The current release is **v0.1.0** for Apple Silicon Macs running macOS 13 or later.
+The current release is **v0.1.1** for Apple Silicon Macs running macOS 13 or later.
 
-- [Download the macOS DMG](https://github.com/Youchengw/capSACIN_modifed/releases/download/v0.1.0/capSACIN-Studio-v0.1.0-macOS-arm64.dmg) — recommended installer.
-- [Download the zipped application](https://github.com/Youchengw/capSACIN_modifed/releases/download/v0.1.0/capSACIN-Studio-v0.1.0-macOS-arm64.zip).
-- [View the v0.1.0 release notes and checksums](https://github.com/Youchengw/capSACIN_modifed/releases/tag/v0.1.0).
+- [Download the macOS DMG](https://github.com/Youchengw/capSACIN_modifed/releases/download/v0.1.1/capSACIN-Studio-v0.1.1-macOS-arm64.dmg) — recommended installer.
+- [Download the zipped application](https://github.com/Youchengw/capSACIN_modifed/releases/download/v0.1.1/capSACIN-Studio-v0.1.1-macOS-arm64.zip).
+- [View the v0.1.1 release notes and checksums](https://github.com/Youchengw/capSACIN_modifed/releases/tag/v0.1.1).
 
 The release bundles the Python sidecar and 13 example PDB structures. A separate Python or Conda environment is not required to run the packaged application.
 
@@ -29,7 +29,7 @@ The release bundles the Python sidecar and 13 example PDB structures. A separate
 2. Drag **capSACIN Studio** into `Applications`.
 3. Launch the app and select a built-in capsid, or open a local PDB file.
 
-The v0.1.0 build is ad-hoc signed and is not notarized with an Apple Developer ID. If macOS blocks the first launch, right-click the app and choose **Open**, or allow it from **System Settings → Privacy & Security**.
+The v0.1.1 build is ad-hoc signed and is not notarized with an Apple Developer ID. If macOS blocks the first launch, right-click the app and choose **Open**, or allow it from **System Settings → Privacy & Security**.
 
 ### Desktop workflow
 
