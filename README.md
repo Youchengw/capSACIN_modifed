@@ -185,7 +185,7 @@ Implements **Steps 1 and 2** of the CapSACIN workflow. This is the primary entry
 5. Center coordinates: COM at origin, min z = 0, min x,y ≥ 0
 6. Slice by z-coordinate: keep atoms with `z ≥ ω · max(z)`
 7. Clean up broken chains and incomplete residues at the cut boundary
-8. Remap chain IDs and save to `output/{pdb}-sliced-w{weight}.pdb`
+8. Remap chain IDs and save to `output/{pdb}-sliced-sym{symmetry}-w{weight}.pdb`
 
 **ROI-aware automatic axis selection:**
 
@@ -225,8 +225,9 @@ Implements **Step 3** of the CapSACIN workflow.
 
 | Argument | Type | Default | Description |
 |---|---|---|---|
-| `--pdb` | str | *required* | Title of the sliced PDB (reads `output/{pdb}-sliced-w{weight}.pdb`) |
+| `--pdb` | str | *required* | PDB filename prefix used for `sliceCapsid.py` output |
 | `--weight` | float | `1.0` | Global scaling factor for restraint force constants |
+| `--symmetry` | int | `None` | Symmetry used for the sliced PDB name; omit only for legacy `output/{pdb}-sliced-w{weight}.pdb` files |
 
 **Algorithm:**
 1. Read the sliced PDB from `sliceCapsid.py` output
@@ -382,12 +383,12 @@ python sliceCapsid.py --pdb 9jjh --weight 0.5 --refindex 1058 --symmetry 5
 python sliceCapsid.py --pdb 3ra2 --weight 0.5 --refindex 928 --symmetry 5
 ```
 
-**Output:** `output/{pdb}-sliced-w{weight}.pdb` — the sliced surface model.
+**Output:** `output/{pdb}-sliced-sym{symmetry}-w{weight}.pdb` — the sliced surface model.
 
 ### 2. Generate position restraints
 
 ```bash
-python genRestraints.py --pdb 1k3v --weight 0.7
+python genRestraints.py --pdb 1k3v --symmetry 5 --weight 0.7
 ```
 
 **Output:** `output/1k3v-w0.7-posre/` — GROMACS `.itp` files, one per protein chain.

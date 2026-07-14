@@ -14,3 +14,14 @@ envs/
 
 # Large/local reference files
 *.pdf
+
+# Desktop build products and local dependencies
+desktop/node_modules/
+desktop/dist/
+desktop/src-tauri/binaries/
+desktop/src-tauri/gen/
+desktop/src-tauri/target/
+desktop/src-tauri/resources/pdb/
+systemSetup/build/
+systemSetup/dist/
+*.log

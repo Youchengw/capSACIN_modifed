@@ -1,4 +1,3 @@
-import MDAnalysis as md
 import itertools
 
 def createDictionary(u):
@@ -10,18 +9,11 @@ def createDictionary(u):
     for i in aminoAcids:
         try:
             atoms = len(u.select_atoms("protein and resname {} and chainid A".format(i)).split("residue")[0].positions)
-        except:
+        except (IndexError, AttributeError, ValueError):
             atoms = 0
         counts.append(atoms)
-    
-    res = {}
-    for key in aminoAcids:
-        for value in counts:
-            res[key] = value
-            counts.remove(value)
-            break
-    
-    return res
+
+    return dict(zip(aminoAcids, counts))
 
 def createChainDictionary(chainValues):
     # chainID = [chr(65 + i) for i in range(len(chainValues))]
@@ -33,13 +25,11 @@ def createChainDictionary(chainValues):
     
     # Chain them together
     all_tokens = list(itertools.chain(capital_letters, numbers, symbols))
+    if len(chainValues) > len(all_tokens):
+        raise ValueError(
+            f"Cannot assign unique one-character chain IDs for {len(chainValues)} chains; "
+            f"only {len(all_tokens)} IDs are available."
+        )
     chainID = all_tokens[:len(chainValues)]
-    
-    res = {}
-    for key in chainValues:
-        for value in chainID:
-            res[key] = value
-            chainID.remove(value)
-            break
-    
-    return res
+
+    return dict(zip(chainValues, chainID))
