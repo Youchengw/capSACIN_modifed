@@ -13,8 +13,12 @@ import os
 def main(args):
     title = args.pdb
     weight = args.weight  # For consistency, but note the original code uses z ranges 15-30 as hardcoded
+    symmetry = args.symmetry
 
-    gro = f"./output/{title}-sliced-w{weight}.pdb"
+    if symmetry is None:
+        gro = f"./output/{title}-sliced-w{weight}.pdb"
+    else:
+        gro = f"./output/{title}-sliced-sym{symmetry}-w{weight}.pdb"
     u = md.Universe(gro)
 
     chainID = list(np.unique(u.select_atoms("protein").chainIDs))
@@ -90,8 +94,9 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--pdb", type=str, required=True, help="PDB file title (e.g., 3ra2-sliced-w0.5)")
+    parser.add_argument("--pdb", type=str, required=True, help="PDB filename prefix used for sliceCapsid.py")
     parser.add_argument("--weight", type=float, default=1.0, help="Restraint scaling weight (default 1.0)")
+    parser.add_argument("--symmetry", "--sym", type=int, choices=(2, 3, 5), default=None,
+                        help="Symmetry used for the sliced PDB name. If omitted, reads the legacy name.")
     args = parser.parse_args()
     main(args)
-

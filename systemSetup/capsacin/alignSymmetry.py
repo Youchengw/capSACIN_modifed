@@ -185,8 +185,18 @@ zAxis = [0,0,1]
 def rotationMatrix(vec1, vec2):
     a, b = (vec1 / np.linalg.norm(vec1)).reshape(3), (vec2 / np.linalg.norm(vec2)).reshape(3)
     v = np.cross(a, b)
-    c = np.dot(a, b)
+    c = np.clip(np.dot(a, b), -1.0, 1.0)
     s = np.linalg.norm(v)
+    if s < 1e-12:
+        if c > 0:
+            return np.eye(3)
+        helper = np.array([1.0, 0.0, 0.0])
+        if abs(a[0]) > 0.9:
+            helper = np.array([0.0, 1.0, 0.0])
+        axis = np.cross(a, helper)
+        axis = axis / np.linalg.norm(axis)
+        kmat = np.array([[0, -axis[2], axis[1]], [axis[2], 0, -axis[0]], [-axis[1], axis[0], 0]])
+        return np.eye(3) + 2.0 * kmat.dot(kmat)
     kmat = np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
     rotation_matrix = np.eye(3) + kmat + kmat.dot(kmat) * ((1 - c) / (s ** 2))
     return rotation_matrix

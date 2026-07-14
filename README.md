@@ -2,8 +2,46 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.9](https://img.shields.io/badge/python-3.9-blue.svg)](https://www.python.org/downloads/)
+[![Release v0.1.0](https://img.shields.io/badge/release-v0.1.0-2ea44f.svg)](https://github.com/Youchengw/capSACIN_modifed/releases/tag/v0.1.0)
+[![macOS Apple Silicon](https://img.shields.io/badge/macOS-Apple%20Silicon-black.svg)](https://github.com/Youchengw/capSACIN_modifed/releases/download/v0.1.0/capSACIN-Studio-v0.1.0-macOS-arm64.dmg)
 
 A computational framework for constructing atomistic surface models of icosahedral virus capsids, enabling high-throughput molecular dynamics simulations of virus–excipient interactions without the prohibitive cost of simulating fully assembled capsids.
+
+---
+
+## capSACIN Studio
+
+**capSACIN Studio** is the graphical desktop interface for the CapSACIN workflow. It combines symmetry-axis selection and surface slicing controls with an integrated [Mol*](https://molstar.org/) 3D capsid viewer.
+
+### Download
+
+The current release is **v0.1.0** for Apple Silicon Macs running macOS 13 or later.
+
+- [Download the macOS DMG](https://github.com/Youchengw/capSACIN_modifed/releases/download/v0.1.0/capSACIN-Studio-v0.1.0-macOS-arm64.dmg) — recommended installer.
+- [Download the zipped application](https://github.com/Youchengw/capSACIN_modifed/releases/download/v0.1.0/capSACIN-Studio-v0.1.0-macOS-arm64.zip).
+- [View the v0.1.0 release notes and checksums](https://github.com/Youchengw/capSACIN_modifed/releases/tag/v0.1.0).
+
+The release bundles the Python sidecar and 13 example PDB structures. A separate Python or Conda environment is not required to run the packaged application.
+
+### Install on macOS
+
+1. Download and open the `.dmg` file.
+2. Drag **capSACIN Studio** into `Applications`.
+3. Launch the app and select a built-in capsid, or open a local PDB file.
+
+The v0.1.0 build is ad-hoc signed and is not notarized with an Apple Developer ID. If macOS blocks the first launch, right-click the app and choose **Open**, or allow it from **System Settings → Privacy & Security**.
+
+### Desktop workflow
+
+1. Select a built-in structure or open a local PDB file.
+2. Choose a 2-fold, 3-fold, or 5-fold symmetry axis.
+3. Adjust the slicing weight `ω`; larger values remove more of the capsid.
+4. Click **Prepare Preview** to detect and rank candidate symmetry axes.
+5. Inspect the selected axis, slicing plane, and ROI in the 3D viewer.
+6. Click **Run capSACIN** to compute the sliced structure.
+7. Switch between **Original**, **Sliced**, and **Overlay** views, then save the resulting PDB.
+
+Advanced settings expose the axis candidate rank, ROI chain and residue range, raw MDAnalysis selection overrides, and manual reference-index workflow. The legacy command-line path remains available and is documented below.
 
 ---
 
@@ -119,35 +157,26 @@ The fraction of native interfacial contacts, Q_IF, is tracked over the pulling t
 capSACIN/
 ├── README.md                          # This file
 ├── LICENSE                            # MIT License
-├── Sarupria_2025_CapSACIN_JCTC.pdf    # Published paper (JCTC 2026)
+├── desktop/                           # Tauri + React desktop application
+│   ├── build_app.sh                   # Complete macOS packaging workflow
+│   ├── src/                           # React controls and Mol* viewer
+│   └── src-tauri/                     # Rust host, bundle config, and icons
 ├── env/
 │   ├── create-env.sh                  # Conda environment setup script
-│   └── requirements.txt               # Python dependencies (pinned versions)
+│   ├── requirements.txt               # Python runtime dependencies
+│   └── requirements-dev.txt           # Packaging and test dependencies
 └── systemSetup/
     ├── examples.dat                   # Example CLI invocations for various capsids
     ├── sliceCapsid.py                 # ★ Main script: Steps 1 & 2 (alignment + slicing)
     ├── genRestraints.py               # ★ Step 3 (position restraint generation)
-    ├── input/                         # Input PDB structures (13 virus capsids)
-    │   ├── 1k3v.pdb                   #   Porcine parvovirus (PPV) — primary model
-    │   ├── 1dzl.pdb                   #   Additional capsid structures for testing
-    │   ├── 1wcd.pdb
-    │   ├── 2buk.pdb
-    │   ├── 2ztn.pdb
-    │   ├── 3r0r.pdb
-    │   ├── 3ra2.pdb
-    │   ├── 4oq8.pdb
-    │   ├── 5cw0.pdb
-    │   ├── 6jja.pdb
-    │   ├── 8des.pdb
-    │   ├── 9clj.pdb
-    │   └── 9jjh.pdb
-    └── capsacin/                      # Python package (supporting modules)
-        ├── __init__.py                # Empty: makes capsacin/ a package
-        ├── definePlane.py             # Plane normal computation from 3 reference atoms
-        ├── formatPDB.py               # PDB-compliant column formatting
-        ├── createDictionary.py        # Amino acid atom counts & chain ID remapping
-        ├── alignSymmetry.py           # Legacy: original monolithic script (hardcoded params)
-        └── mdaCIF.py                  # Custom MDAnalysis CIF format reader (OpenBabel)
+    ├── input/                         # 13 bundled capsid PDB structures
+    ├── capsacin/                      # Reusable alignment and slicing pipeline
+    │   ├── pipeline.py                # Desktop/CLI-compatible computation pipeline
+    │   ├── protocol.py                # Sidecar request and result schema
+    │   ├── findSymmetryAxes.py        # Global 2/3/5-fold axis search
+    │   └── definePlane.py             # Plane and reference-point geometry
+    ├── sidecar/                       # JSON-line Python service bundled with the app
+    └── tests/                         # Pipeline and sidecar regression tests
 ```
 
 ---
@@ -185,7 +214,7 @@ Implements **Steps 1 and 2** of the CapSACIN workflow. This is the primary entry
 5. Center coordinates: COM at origin, min z = 0, min x,y ≥ 0
 6. Slice by z-coordinate: keep atoms with `z ≥ ω · max(z)`
 7. Clean up broken chains and incomplete residues at the cut boundary
-8. Remap chain IDs and save to `output/{pdb}-sliced-w{weight}.pdb`
+8. Remap chain IDs and save to `output/{pdb}-sliced-sym{symmetry}-w{weight}.pdb`
 
 **ROI-aware automatic axis selection:**
 
@@ -225,8 +254,9 @@ Implements **Step 3** of the CapSACIN workflow.
 
 | Argument | Type | Default | Description |
 |---|---|---|---|
-| `--pdb` | str | *required* | Title of the sliced PDB (reads `output/{pdb}-sliced-w{weight}.pdb`) |
+| `--pdb` | str | *required* | PDB filename prefix used for `sliceCapsid.py` output |
 | `--weight` | float | `1.0` | Global scaling factor for restraint force constants |
+| `--symmetry` | int | `None` | Symmetry used for the sliced PDB name; omit only for legacy `output/{pdb}-sliced-w{weight}.pdb` files |
 
 **Algorithm:**
 1. Read the sliced PDB from `sliceCapsid.py` output
@@ -319,18 +349,21 @@ See the paper (Figure S1) for validation of the alignment + slicing step across 
 
 ---
 
-## Installation
+## Command-Line and Development Setup
+
+Desktop users should install the packaged application from the [latest release](https://github.com/Youchengw/capSACIN_modifed/releases/latest). The following setup is for command-line use, testing, or desktop application development.
 
 ### Prerequisites
 
-- [Conda](https://docs.conda.io/en/latest/) (Miniconda or Anaconda)
-- Python 3.9.7
+- [Conda](https://docs.conda.io/en/latest/) with Python 3.9
+- Node.js 18 or later for desktop frontend development
+- Rust and Cargo for native desktop builds
 
-### Setup
+### Python CLI setup
 
 ```bash
 # 1. Clone the repository
-git clone git@github.com:SAMPEL-Group/CapSACIN.git
+git clone https://github.com/Youchengw/capSACIN_modifed.git
 cd capSACIN
 
 # 2. Create and activate the conda environment
@@ -343,6 +376,24 @@ cd ../systemSetup
 python -c "from capsacin import definePlane, formatPDB, createDictionary; print('Ready!')"
 ```
 
+### Desktop development
+
+```bash
+cd desktop
+npm ci
+npm run check
+npm run tauri dev
+```
+
+To build the complete Apple Silicon `.app` and `.dmg`, including the Python sidecar and bundled PDB files:
+
+```bash
+cd desktop
+./build_app.sh
+```
+
+The build script requires the `capSACIN` Conda environment, PyInstaller, Node.js, and the Rust toolchain. Generated dependencies, sidecar binaries, application bundles, and Tauri build output are intentionally excluded from Git.
+
 ### Dependencies
 
 | Package | Version | Purpose |
@@ -352,10 +403,12 @@ python -c "from capsacin import definePlane, formatPDB, createDictionary; print(
 | `MDAnalysis` | 2.4.3 | PDB parsing, atom selection, distance computation |
 | `tqdm` | 4.65.0 | Progress bars for chain/residue iteration |
 | `pandas` | 1.5.3 | Tabular atom data manipulation |
+| `pytest` | 8.x | Pipeline and sidecar regression tests |
+| `PyInstaller` | 6.x | Standalone Python sidecar packaging |
 
 ---
 
-## Quick Start
+## Command-Line Quick Start
 
 The file `examples.dat` provides ready-to-use command-line examples. Here are the most common use cases:
 
@@ -382,12 +435,12 @@ python sliceCapsid.py --pdb 9jjh --weight 0.5 --refindex 1058 --symmetry 5
 python sliceCapsid.py --pdb 3ra2 --weight 0.5 --refindex 928 --symmetry 5
 ```
 
-**Output:** `output/{pdb}-sliced-w{weight}.pdb` — the sliced surface model.
+**Output:** `output/{pdb}-sliced-sym{symmetry}-w{weight}.pdb` — the sliced surface model.
 
 ### 2. Generate position restraints
 
 ```bash
-python genRestraints.py --pdb 1k3v --weight 0.7
+python genRestraints.py --pdb 1k3v --symmetry 5 --weight 0.7
 ```
 
 **Output:** `output/1k3v-w0.7-posre/` — GROMACS `.itp` files, one per protein chain.

@@ -8,14 +8,14 @@ distribution of protein chain centers of mass, then selects a reference atom
 near a chosen axis — eliminating the need for users to manually provide
 reference atom indices via VMD.
 
-Method (Inertia Tensor + Golden Ratio):
-    1. Compute chain COMs and their covariance matrix relative to capsid center.
-    2. Eigendecomposition yields 3 mutually orthogonal principal axes, which
-       approximate 3 orthogonal 2-fold axes of the icosahedron.
-    3. Derive all 6 five-fold, 10 three-fold, and 15 two-fold axes from the
-       2-fold basis using the golden ratio φ = (1+√5)/2.
-    4. Select the best axis of the requested symmetry type.
-    5. Find the chain nearest to that axis and return a representative atom.
+Method (Direct Spherical Search):
+    1. Compute one COM per MODEL/asymmetric-unit copy and the capsid center.
+    2. Sample directions on the unit sphere with a Fibonacci grid.
+    3. Score each direction by how well rotations by 360/fold map monomer
+       directions onto other monomer directions.
+    4. Deduplicate local minima to obtain candidate 5-fold, 3-fold, or 2-fold
+       axes, ranked by symmetry score.
+    5. Select the requested axis and choose representative reference atoms.
 
 Reference
 ---------
@@ -26,6 +26,7 @@ three orthogonal 2-fold axes are aligned with the coordinate axes.
 import numpy as np
 import MDAnalysis as md
 from MDAnalysis.analysis import contacts
+from capsacin.definePlane import fit_plane_normal, select_5fold_ring
 
 
 # ---------------------------------------------------------------------------
@@ -104,6 +105,8 @@ def _fibonacci_sphere(n_samples):
     -------
     directions : np.ndarray of shape (n_samples, 3)
     """
+    if n_samples < 2:
+        raise ValueError(f"n_samples must be >= 2, got {n_samples}.")
     golden = (1.0 + np.sqrt(5.0)) / 2.0
     dirs = np.empty((n_samples, 3))
     for i in range(n_samples):
@@ -571,7 +574,8 @@ def find_reference_atom(universe, axis, capsid_center, symmetry_type):
             if np.any(mask):
                 copies.append(all_frame_coords[frame_idx][mask][0])
 
-        if len(copies) < max(k1, k2) + 1:
+        min_copies = 5 if symmetry_type == 5 else max(k1, k2) + 1
+        if len(copies) < min_copies:
             continue
 
         copies = np.array(copies)
@@ -588,25 +592,35 @@ def find_reference_atom(universe, axis, capsid_center, symmetry_type):
         dists = np.linalg.norm(copies - pointA, axis=1)
         dist_sort = np.argsort(dists)
 
-        # Apply same z-perturbation as sliceCapsid.py
-        pointB = copies[dist_sort[k1]].copy()
-        pointC = copies[dist_sort[k2]].copy()
-        pointB[2] += 0.1
-        pointC[2] -= 0.1
-
-        # Compute plane normal (matching definePlane logic)
-        com = np.mean([pointA, pointB, pointC], axis=0)
-        u_vec = pointB - com
-        v_vec = pointC - com
-        normal = np.cross(u_vec, v_vec)
-        normal = _normalize(normal)
+        # Compute plane normal via SVD-based fit
+        if symmetry_type == 5:
+            # Use all 5 ring copies for a better plane fit
+            ring_points = select_5fold_ring(copies, pointA)
+            normal, _rmsd, sv = fit_plane_normal(ring_points,
+                                                  reference_direction=axis)
+            # For backward-compat pointB/pointC references
+            pointB = ring_points[1].copy()
+            pointC = ring_points[3].copy()
+        else:
+            # 3-fold: use 3 points directly; 2-fold: keep z-perturbation
+            # (z-perturbation is adequate for candidate scoring)
+            pointB = copies[dist_sort[k1]].copy()
+            pointC = copies[dist_sort[k2]].copy()
+            if symmetry_type == 2:
+                pointB[2] += 0.1
+                pointC[2] -= 0.1
+            normal, _rmsd, sv = fit_plane_normal(
+                np.array([pointA, pointB, pointC]),
+                reference_direction=axis,
+            )
 
         # Score: how well does this normal align with the theoretical axis?
         alignment = abs(np.dot(normal, axis))
-        # Also check that the 3 points aren't collinear (normal should be well-defined)
-        normal_mag = np.linalg.norm(np.cross(u_vec, v_vec))
-
-        score = alignment + 0.01 * normal_mag  # tiny bonus for well-defined plane
+        # Normalized non-collinearity: s[1]/s[0] ∈ [0,1]
+        #   → near 1: well-spread points, normal is reliable
+        #   → near 0: nearly collinear, normal is noise
+        ncl = sv[1] / sv[0] if sv[0] > 1e-12 else 0.0
+        score = alignment + 0.05 * min(ncl, 1.0)
 
         if score > best_score:
             best_score = score
@@ -676,6 +690,61 @@ def _find_reference_frames(monomer_dirs, best_axis, symmetry_type,
     return [frame_a, frame_b, frame_c]
 
 
+def find_symmetry_related_frames(universe, axis, symmetry_type, seed_frame=None):
+    """Return the MODEL frames forming one local n-fold feature.
+
+    The multi-MODEL capsid inputs store one symmetry copy per trajectory
+    frame. When ``seed_frame`` is omitted, the monomer nearest the selected
+    physical axis is chosen automatically. This is the correct behavior for
+    globally ranked axes. When ROI-aware ranking is active, the caller can
+    provide the user's ROI frame as the seed. Rotating that monomer direction
+    by ``360 / symmetry_type`` degrees identifies the complete local feature.
+    """
+    if symmetry_type not in (2, 3, 5):
+        raise ValueError(
+            f"symmetry_type must be 2, 3, or 5; got {symmetry_type}."
+        )
+
+    n_frames = universe.trajectory.n_frames
+    if seed_frame is not None and (seed_frame < 0 or seed_frame >= n_frames):
+        raise ValueError(
+            f"seed_frame={seed_frame} but the trajectory has {n_frames} frames."
+        )
+
+    center = compute_capsid_center(universe)
+    monomer_coms = compute_monomer_coms(universe)
+    centered_coms = monomer_coms - center
+    norms = np.linalg.norm(centered_coms, axis=1, keepdims=True)
+    monomer_dirs = centered_coms / np.maximum(norms, 1e-12)
+    axis = _normalize(np.asarray(axis, dtype=float))
+    if seed_frame is None:
+        # The alignment maps this signed axis to +z and slicing retains the
+        # high-z cap. Pick the local feature at that same (+axis) end so its
+        # ROI remains visible on the sliced/overlay structure after Run.
+        seed_frame = int(np.argmax(monomer_dirs @ axis))
+    seed_dir = monomer_dirs[seed_frame]
+
+    frames = []
+    available = np.ones(n_frames, dtype=bool)
+    angle_step = 2.0 * np.pi / symmetry_type
+
+    for step in range(symmetry_type):
+        angle = step * angle_step
+        target = _normalize(
+            np.cos(angle) * seed_dir
+            + np.sin(angle) * np.cross(axis, seed_dir)
+            + (1.0 - np.cos(angle)) * np.dot(axis, seed_dir) * axis
+        )
+        scores = monomer_dirs @ target
+        scores[~available] = -np.inf
+        frame = int(np.argmax(scores))
+        frames.append(frame)
+        available[frame] = False
+
+    universe.trajectory[0]
+    return frames
+
+
 def _pick_reference_atoms(universe, frames, roi_selection=None):
     def _pick_atom_from_monomer(frame):
         universe.trajectory[frame]
@@ -692,6 +761,210 @@ def _pick_reference_atoms(universe, frames, roi_selection=None):
     ref_indices = [_pick_atom_from_monomer(frame) for frame in frames]
     universe.trajectory[0]
     return ref_indices
+
+
+def select_2fold_pairs(universe, ref_idx, ref_frame, partner_frame,
+                        ref_chain_id=None, partner_chain_id=None,
+                        min_pair_span=5.0, max_pair_span=25.0):
+    """
+    Select two atom pairs (A, A') and (B, B') for 2-fold plane fitting.
+
+    The reference atom A is identified by ``ref_idx`` in ``ref_frame``.
+    Its partner A' is the same (resname, resid, name) atom in ``partner_frame``.
+    A second atom B is chosen from the same local region as A, preferring
+    nearby CA/heavy atoms within a useful distance span from A.
+
+    Candidate selection priority:
+      1. Same-residue heavy atoms (CA, N, C, O, CB, ...).
+      2. Nearby CA atoms from neighbouring residues.
+      3. Any atom whose distance from A is within [min_pair_span, max_pair_span].
+    Candidates are rejected if no matching partner B' exists in ``partner_frame``.
+
+    Parameters
+    ----------
+    universe : MDAnalysis.Universe
+    ref_idx : int
+        0-based global atom index of the primary reference atom A.
+    ref_frame : int
+        Trajectory frame (0-based) containing A.
+    partner_frame : int
+        Trajectory frame containing A'.
+    ref_chain_id : str or None
+        Optional original chain ID containing A and B in ``ref_frame``.
+    partner_chain_id : str or None
+        Optional original chain ID containing A' and B' in ``partner_frame``.
+    min_pair_span : float
+        Minimum allowed distance between A and B (Angstrom). Default 5.0.
+    max_pair_span : float
+        Maximum allowed distance between A and B (Angstrom). Default 25.0.
+
+    Returns
+    -------
+    points : np.ndarray of shape (4, 3) or None
+        [pointA, pointA_prime, pointB, pointB_prime] if a suitable B is found,
+        otherwise None.
+    diagnostics : dict
+        Keys: 'b_atom_index', 'b_resname', 'b_resid', 'b_name',
+              'pair_distance', 'candidate_count', 'error' (on failure).
+    """
+    # Get pointA and its atom identity
+    universe.trajectory[ref_frame]
+    ref_atom = universe.select_atoms(f"protein and index {ref_idx}")
+    if len(ref_atom) == 0:
+        return None, {"error": f"ref_idx {ref_idx} not found in frame {ref_frame}"}
+    pointA = ref_atom.positions[0].copy()
+    ref_resname = ref_atom.resnames[0]
+    ref_resid = ref_atom.resids[0]
+    ref_name = ref_atom.names[0]
+
+    # Get pointA' in partner_frame
+    universe.trajectory[partner_frame]
+    partner_sel = (
+        f"protein and resname {ref_resname} and resid {ref_resid} "
+        f"and name {ref_name}"
+    )
+    if partner_chain_id is not None:
+        partner_sel += f" and chainid {partner_chain_id}"
+    partner_atoms = universe.select_atoms(partner_sel)
+    if len(partner_atoms) == 0:
+        universe.trajectory[0]
+        return None, {"error": f"A' not found in frame {partner_frame}"}
+    pointA_prime = partner_atoms.positions[0].copy()
+
+    # Build candidate list for B in ref_frame.
+    # Constrain to atoms within ±5 residues of ref_resid — this ensures B
+    # belongs to the same local 2-fold patch as A, not a distant region.
+    universe.trajectory[ref_frame]
+    min_resid = ref_resid - 5
+    max_resid = ref_resid + 5
+    candidate_sel = f"protein and resid {min_resid}:{max_resid}"
+    if ref_chain_id is not None:
+        candidate_sel += f" and chainid {ref_chain_id}"
+    candidate_pool = universe.select_atoms(candidate_sel)
+    # If the residue window matches nothing (unusual), widen to all protein
+    if len(candidate_pool) == 0:
+        fallback_sel = "protein"
+        if ref_chain_id is not None:
+            fallback_sel += f" and chainid {ref_chain_id}"
+        candidate_pool = universe.select_atoms(fallback_sel)
+
+    candidates = []
+    mid_span = (min_pair_span + max_pair_span) / 2.0
+
+    for atom in candidate_pool:
+        # Skip the reference atom itself
+        if (atom.resname == ref_resname and atom.resid == ref_resid
+                and atom.name == ref_name):
+            continue
+
+        b_pos = atom.position
+        dist = np.linalg.norm(b_pos - pointA)
+        if dist < min_pair_span or dist > max_pair_span:
+            continue
+
+        # Check B' exists in partner_frame
+        universe.trajectory[partner_frame]
+        b_prime_sel = (
+            f"protein and resname {atom.resname} and resid {atom.resid} "
+            f"and name {atom.name}"
+        )
+        if partner_chain_id is not None:
+            b_prime_sel += f" and chainid {partner_chain_id}"
+        b_prime_atoms = universe.select_atoms(b_prime_sel)
+        if len(b_prime_atoms) == 0:
+            universe.trajectory[ref_frame]
+            continue
+
+        # Score: prefer same-residue, CA > backbone heavy > other, prefer mid-span
+        score = 0.0
+        if atom.resname == ref_resname and atom.resid == ref_resid:
+            score += 4.0
+        if atom.name == "CA":
+            score += 2.0
+        elif atom.name in ("N", "C", "O", "CB"):
+            score += 1.0
+        score -= abs(dist - mid_span) / mid_span  # penalty for edge distances
+
+        candidates.append({
+            "score": score,
+            "position": b_pos.copy(),
+            "b_prime_pos": b_prime_atoms.positions[0].copy(),
+            "index": atom.index,
+            "resname": atom.resname,
+            "resid": atom.resid,
+            "name": atom.name,
+            "distance": dist,
+        })
+        universe.trajectory[ref_frame]
+
+    universe.trajectory[0]
+
+    if len(candidates) == 0:
+        return None, {
+            "candidate_count": 0,
+            "error": (f"No suitable B atom found with distance in "
+                      f"[{min_pair_span:.0f}, {max_pair_span:.0f}]A "
+                      f"and valid partner copy in frame {partner_frame}"),
+        }
+
+    candidates.sort(key=lambda c: c["score"], reverse=True)
+    best = candidates[0]
+
+    points = np.array([
+        pointA,
+        pointA_prime,
+        best["position"],
+        best["b_prime_pos"],
+    ])
+
+    diagnostics = {
+        "b_atom_index": int(best["index"]),
+        "b_resname": best["resname"],
+        "b_resid": best["resid"],
+        "b_name": best["name"],
+        "pair_distance": best["distance"],
+        "candidate_count": len(candidates),
+        "ref_frame": int(ref_frame),
+        "partner_frame": int(partner_frame),
+        "ref_chain_id": ref_chain_id,
+        "partner_chain_id": partner_chain_id,
+    }
+
+    return points, diagnostics
+
+
+def compute_local_plane_diagnostics(points, detected_axis=None):
+    """
+    Compute quality metrics for a locally-fitted plane relative to a
+    detected global symmetry axis.
+
+    Parameters
+    ----------
+    points : np.ndarray of shape (N, 3)
+        Points used in the local plane fit.
+    detected_axis : np.ndarray of shape (3,) or None
+        Reference axis direction (unit vector) from global symmetry detection.
+
+    Returns
+    -------
+    diag : dict
+        Keys: 'plane_normal', 'plane_rmsd', 'n_points',
+              'alignment_angle_deg' (only if detected_axis is not None).
+    """
+    normal, rmsd, sv = fit_plane_normal(points, reference_direction=detected_axis)
+    # non_collinearity ratio: close to 1 = well-spread, near 0 = nearly collinear
+    non_collinearity = sv[1] / sv[0] if sv[0] > 1e-12 else 0.0
+    diag = {
+        "plane_normal": normal,
+        "plane_rmsd": rmsd,
+        "n_points": len(points),
+        "singular_values": sv,
+        "non_collinearity": non_collinearity,
+    }
+    if detected_axis is not None:
+        dot = np.clip(np.abs(np.dot(normal, detected_axis)), -1.0, 1.0)
+        diag["alignment_angle_deg"] = np.rad2deg(np.arccos(dot))
+    return diag
 
 
 def auto_detect_reference(universe, symmetry_type, axis_index=0,

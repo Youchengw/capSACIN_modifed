@@ -1,14 +1,30 @@
 Some example input configurations for generating capsid surfaces:
 
-# === AUTO mode (no --refindex needed!) ===
-# Automatically detects symmetry axes and reference atoms
-python sliceCapsid.py --pdb 1k3v --symmetry 5 --weight 0.7 --auto
-python sliceCapsid.py --pdb 1k3v --symmetry 3 --weight 0.7 --auto
-python sliceCapsid.py --pdb 1k3v --symmetry 2 --weight 0.7 --auto
+# === AUTO mode: direct equivalents of the original examples ===
+# New workflow: no --refindex is needed. The requested x-fold symmetry axis
+# and reference atoms are detected automatically from the full capsid geometry.
 
-# Auto-detect on any capsid structure
+# Different .pdb file examples
 python sliceCapsid.py --pdb 9jjh --weight 0.5 --symmetry 5 --auto
 python sliceCapsid.py --pdb 3ra2 --weight 0.5 --symmetry 5 --auto
+
+# 5-fold example
+python sliceCapsid.py --pdb 1k3v --weight 0.55 --symmetry 5 --auto
+
+# 2-fold example
+python sliceCapsid.py --pdb 1k3v --weight 0.55 --symmetry 2 --auto
+
+# 3-fold example
+python sliceCapsid.py --pdb 1k3v --weight 0.55 --symmetry 3 --auto
+
+# 5-fold example, big weight
+python sliceCapsid.py --pdb 1k3v --weight 0.7 --symmetry 5 --auto
+
+# 5-fold example, small weight
+python sliceCapsid.py --pdb 1k3v --weight 0.3 --symmetry 5 --auto
+
+# Optional: inspect all global candidate axes before slicing
+python sliceCapsid.py --pdb 1k3v --symmetry 5 --list-axes
 
 # === ROI-aware AUTO mode ===
 # Rank axes by distance/angle to an ROI on MODEL/frame 0, then slice using
