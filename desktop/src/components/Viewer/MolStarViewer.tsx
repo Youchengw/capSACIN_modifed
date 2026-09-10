@@ -31,6 +31,9 @@ export function MolStarViewer() {
   const [viewerMessage, setViewerMessage] = useState("Initializing 3D viewer…");
 
   const previewResult = useAppStore((state) => state.previewResult);
+  const inputGeneration = useAppStore((state) => state.inputGeneration);
+  const inputPath = useAppStore((state) => state.inputPath);
+  const preparing = useAppStore((state) => state.sidecarStatus) === "running";
   const sliceResult = useAppStore((state) => state.sliceResult);
   const displayMode = useAppStore((state) => state.displayMode);
   const weight = useAppStore((state) => state.weight);
@@ -49,6 +52,8 @@ export function MolStarViewer() {
     roiStartResid,
     roiEndResid,
   );
+
+  useEffect(() => { cacheRef.current.clear(); }, [inputGeneration]);
 
   useEffect(() => {
     let disposed = false;
@@ -102,7 +107,7 @@ export function MolStarViewer() {
   }, [setError]);
 
   useEffect(() => {
-    if (!viewerReady || !pluginRef.current || (!previewResult && !sliceResult)) return;
+    if (!viewerReady || !pluginRef.current) return;
     const serial = ++rebuildSerial.current;
     const timeout = window.setTimeout(() => {
       // Mol* state-tree mutations are asynchronous and are not safe to run in
@@ -116,6 +121,10 @@ export function MolStarViewer() {
           setViewerMessage("Rendering capsid…");
           try {
             await plugin.clear();
+            if (!previewResult && !sliceResult) {
+              setViewerMessage("");
+              return;
+            }
             let originalStructure: any = null;
             let slicedStructure: any = null;
             const needsOriginal =
@@ -200,6 +209,7 @@ export function MolStarViewer() {
     return () => window.clearTimeout(timeout);
   }, [
     viewerReady,
+    inputGeneration,
     previewResult,
     sliceResult,
     displayMode,
@@ -223,8 +233,8 @@ export function MolStarViewer() {
       {!hasStructure && viewerReady && (
         <div className="viewer-empty-state">
           <div className="viewer-empty-icon">◌</div>
-          <div>Select a structure and prepare a preview</div>
-          <small>The aligned capsid will appear here in 3D.</small>
+          <div>{!inputPath ? "Select a PDB to begin" : preparing ? "Preparing symmetry previews…" : "No preview for the current settings"}</div>
+          <small>{inputPath ? "Use Prepare all folds after editing axis or ROI settings." : "All three symmetry folds will be prepared automatically."}</small>
         </div>
       )}
       {viewerMessage && <div className="viewer-status">{viewerMessage}</div>}

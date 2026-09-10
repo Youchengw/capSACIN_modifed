@@ -34,6 +34,7 @@ from capsacin.protocol import PipelineCancelledError, SliceRequest
 from .handlers import (
     handle_inspect_structure,
     handle_prepare_preview,
+    handle_prepare_all_previews,
     handle_run_slice,
 )
 
@@ -168,8 +169,10 @@ class SidecarServer:
                 progress=lambda stage, frac, msg="": _emit_progress(req_id, stage, frac, msg),
                 cancel=cancel_event,
             )
-        elif operation == "prepare_preview":
-            return handle_prepare_preview(
+        elif operation in ("prepare_preview", "prepare_all_previews"):
+            handler = (handle_prepare_all_previews if operation == "prepare_all_previews"
+                       else handle_prepare_preview)
+            return handler(
                 params,
                 workspace_base=self._workspace_base,
                 progress=lambda stage, frac, msg="": _emit_progress(req_id, stage, frac, msg),

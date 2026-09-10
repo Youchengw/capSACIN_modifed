@@ -11,6 +11,8 @@ export function SymmetrySelector() {
   const symmetry = useAppStore((s) => s.symmetry);
   const setSymmetry = useAppStore((s) => s.setSymmetry);
   const busy = useAppStore((s) => s.sidecarStatus) === "running";
+  const previews = useAppStore((s) => s.foldPreviews);
+  const errors = useAppStore((s) => s.foldErrors);
 
   return (
     <div className="panel-section">
@@ -21,10 +23,11 @@ export function SymmetrySelector() {
             key={f.value}
             className={`fold-btn ${symmetry === f.value ? "selected" : ""}`}
             disabled={busy}
+            title={errors[f.value] ?? (previews[f.value] ? "Preview ready" : "Preview not prepared")}
             onClick={() => setSymmetry(f.value)}
             style={symmetry === f.value ? { background: f.color, borderColor: f.color } : {}}
           >
-            {f.label}
+            {f.label}{previews[f.value] ? " ✓" : errors[f.value] ? " !" : ""}
           </button>
         ))}
       </div>

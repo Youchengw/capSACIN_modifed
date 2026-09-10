@@ -3,6 +3,7 @@ import type {
   SymmetryFold, AxisMode, DisplayMode, SidecarStatus,
   InspectResult, PreparePreviewResult, RunSliceResult,
   AxisCandidate, SliceStatistics,
+  PrepareAllPreviewsResult,
 } from "../sidecar/types";
 
 // ---- Built-in PDB list ----
@@ -14,17 +15,19 @@ export const BUILTIN_PDBS = [
 
 // ---- Store shape ----
 
-interface AppState {
+export interface AppState {
   // Structure
   inputPath: string;
   isBuiltin: boolean;
   structureName: string;
+  inputGeneration: number;
 
   // Parameters
   symmetry: SymmetryFold;
   weight: number;
   axisMode: AxisMode;
   axisIndex: number;
+  axisIndices: Record<SymmetryFold, number>;
   roiSelection: string;
   roiEnabled: boolean;
   roiFrame: number;
@@ -46,6 +49,8 @@ interface AppState {
   // Results
   inspectResult: InspectResult | null;
   previewResult: PreparePreviewResult | null;
+  foldPreviews: Partial<Record<SymmetryFold, PreparePreviewResult>>;
+  foldErrors: Partial<Record<SymmetryFold, string>>;
   sliceResult: RunSliceResult | null;
 
   // Viewer
@@ -74,6 +79,7 @@ interface AppState {
   setError: (e: string | null) => void;
   setInspectResult: (r: InspectResult) => void;
   setPreviewResult: (r: PreparePreviewResult) => void;
+  setAllPreviews: (r: PrepareAllPreviewsResult) => void;
   setSliceResult: (r: RunSliceResult) => void;
   setDisplayMode: (m: DisplayMode) => void;
   toggleAxis: () => void;
@@ -86,10 +92,12 @@ const initialState = {
   inputPath: "",
   isBuiltin: false,
   structureName: "",
+  inputGeneration: 0,
   symmetry: 5 as SymmetryFold,
   weight: 0.5,
   axisMode: "auto" as AxisMode,
   axisIndex: 0,
+  axisIndices: { 2: 0, 3: 0, 5: 0 },
   roiSelection: "",
   roiEnabled: false,
   roiFrame: 0,
@@ -105,6 +113,8 @@ const initialState = {
   stageFraction: 0,
   inspectResult: null as InspectResult | null,
   previewResult: null as PreparePreviewResult | null,
+  foldPreviews: {} as AppState["foldPreviews"],
+  foldErrors: {} as AppState["foldErrors"],
   sliceResult: null as RunSliceResult | null,
   displayMode: "original" as DisplayMode,
   showAxis: true,
@@ -112,15 +122,28 @@ const initialState = {
   showRoi: false,
 };
 
+const clearedPreviews = {
+  previewResult: null, sliceResult: null, foldPreviews: {}, foldErrors: {}, error: null,
+};
+const resetAxes = { axisIndex: 0, axisIndices: { 2: 0, 3: 0, 5: 0 } };
+
 export const useAppStore = create<AppState>((set) => ({
   ...initialState,
 
   setInputPath: (path, isBuiltin, name) =>
-    set({
+    set((state) => ({
+      ...clearedPreviews,
+      ...resetAxes,
       inputPath: path,
+      inputGeneration: state.inputGeneration + 1,
+      sidecarStatus: "idle",
+      stageName: "",
+      stageFraction: 0,
+      displayMode: "original",
       isBuiltin,
       structureName: name,
-      axisIndex: 0,
+      axisMode: "auto",
+      roiEnabled: false,
       roiSelection: "",
       roiFrame: 0,
       roiChain: "",
@@ -130,20 +153,32 @@ export const useAppStore = create<AppState>((set) => ({
       inspectResult: null,
       previewResult: null,
       sliceResult: null,
-    }),
+    })),
 
-  setSymmetry: (symmetry) => set({ symmetry, axisIndex: 0, previewResult: null, sliceResult: null }),
+  setSymmetry: (symmetry) => set((state) => symmetry === state.symmetry ? {} : ({
+    symmetry,
+    axisIndex: state.axisIndices[symmetry],
+    previewResult: state.foldPreviews[symmetry] ?? null,
+    sliceResult: null,
+    error: state.foldErrors[symmetry] ?? null,
+  })),
   setWeight: (weight) => set({ weight, sliceResult: null }),
-  setAxisMode: (axisMode) => set({ axisMode, previewResult: null, sliceResult: null }),
-  setAxisIndex: (axisIndex) => set({ axisIndex, previewResult: null, sliceResult: null }),
-  setRoiSelection: (roiSelection) => set({ roiSelection, axisIndex: 0, previewResult: null, sliceResult: null }),
-  setRoiEnabled: (roiEnabled) => set({ roiEnabled, axisIndex: 0, previewResult: null, sliceResult: null }),
-  setRoiFrame: (roiFrame) => set({ roiFrame, axisIndex: 0, previewResult: null, sliceResult: null }),
-  setRoiChain: (roiChain) => set({ roiChain, axisIndex: 0, previewResult: null, sliceResult: null }),
-  setRoiStartResid: (roiStartResid) => set({ roiStartResid, axisIndex: 0, previewResult: null, sliceResult: null }),
-  setRoiEndResid: (roiEndResid) => set({ roiEndResid, axisIndex: 0, previewResult: null, sliceResult: null }),
-  setRefIndices: (refIndices) => set({ refIndices, previewResult: null, sliceResult: null }),
-  setLegacyPlane: (legacyPlane) => set({ legacyPlane, previewResult: null, sliceResult: null }),
+  setAxisMode: (axisMode) => set({ axisMode, ...clearedPreviews }),
+  setAxisIndex: (axisIndex) => set((state) => ({
+    axisIndex,
+    axisIndices: { ...state.axisIndices, [state.symmetry]: axisIndex },
+    previewResult: null, sliceResult: null, error: null,
+    foldPreviews: { ...state.foldPreviews, [state.symmetry]: undefined },
+    foldErrors: { ...state.foldErrors, [state.symmetry]: undefined },
+  })),
+  setRoiSelection: (roiSelection) => set((s) => ({ roiSelection, ...(s.roiEnabled ? { ...resetAxes, ...clearedPreviews } : {}) })),
+  setRoiEnabled: (roiEnabled) => set({ roiEnabled, ...resetAxes, ...clearedPreviews }),
+  setRoiFrame: (roiFrame) => set((s) => ({ roiFrame, ...(s.roiEnabled ? { ...resetAxes, ...clearedPreviews } : {}) })),
+  setRoiChain: (roiChain) => set((s) => ({ roiChain, ...(s.roiEnabled ? { ...resetAxes, ...clearedPreviews } : {}) })),
+  setRoiStartResid: (roiStartResid) => set((s) => ({ roiStartResid, ...(s.roiEnabled ? { ...resetAxes, ...clearedPreviews } : {}) })),
+  setRoiEndResid: (roiEndResid) => set((s) => ({ roiEndResid, ...(s.roiEnabled ? { ...resetAxes, ...clearedPreviews } : {}) })),
+  setRefIndices: (refIndices) => set((s) => ({ refIndices, ...(s.axisMode === "manual" ? clearedPreviews : {}) })),
+  setLegacyPlane: (legacyPlane) => set({ legacyPlane, ...clearedPreviews }),
   toggleAdvanced: () => set((s) => ({ showAdvanced: !s.showAdvanced })),
 
   setSidecarStatus: (sidecarStatus) => set({ sidecarStatus }),
@@ -168,7 +203,19 @@ export const useAppStore = create<AppState>((set) => ({
       roiEndResid: selectedChain?.max_resid ?? 0,
     };
   }),
-  setPreviewResult: (previewResult) => set({ previewResult, displayMode: "original" }),
+  setPreviewResult: (previewResult) => set((state) => ({
+    previewResult, sliceResult: null, displayMode: "original",
+    foldPreviews: { ...state.foldPreviews, [state.symmetry]: previewResult },
+    foldErrors: { ...state.foldErrors, [state.symmetry]: undefined },
+  })),
+  setAllPreviews: (result) => set((state) => ({
+    foldPreviews: result.previews,
+    foldErrors: result.errors,
+    previewResult: result.previews[state.symmetry] ?? null,
+    sliceResult: null,
+    error: result.errors[state.symmetry] ?? null,
+    displayMode: "original",
+  })),
   setSliceResult: (sliceResult) => set({ sliceResult }),
   setDisplayMode: (displayMode) => set({ displayMode }),
   toggleAxis: () => set((s) => ({ showAxis: !s.showAxis })),

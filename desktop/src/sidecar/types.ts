@@ -3,7 +3,7 @@
 export type SymmetryFold = 2 | 3 | 5;
 export type AxisMode = "auto" | "manual";
 export type DisplayMode = "original" | "sliced" | "overlay";
-export type OperationType = "inspect_structure" | "prepare_preview" | "run_slice";
+export type OperationType = "inspect_structure" | "prepare_preview" | "prepare_all_previews" | "run_slice";
 export type SidecarStatus = "idle" | "running" | "error" | "cancelled";
 
 // ---- Structure inspection ----
@@ -49,6 +49,12 @@ export interface PreparePreviewResult {
   workspace_path: string;
   diagnostics: Record<string, unknown>;
   warnings: string[];
+}
+
+export interface PrepareAllPreviewsResult {
+  inspection: InspectResult;
+  previews: Partial<Record<SymmetryFold, PreparePreviewResult>>;
+  errors: Partial<Record<SymmetryFold, string>>;
 }
 
 // ---- Run slice ----

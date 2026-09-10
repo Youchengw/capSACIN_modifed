@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useAppStore, BUILTIN_PDBS } from "../../store/useAppStore";
+import { preparePreviews } from "../../sidecar/preparePreviews";
 
 export function StructureSelector() {
   const inputPath = useAppStore((s) => s.inputPath);
@@ -7,9 +8,6 @@ export function StructureSelector() {
   const structureName = useAppStore((s) => s.structureName);
   const setInputPath = useAppStore((s) => s.setInputPath);
   const sidecarStatus = useAppStore((s) => s.sidecarStatus);
-  const setSidecarStatus = useAppStore((s) => s.setSidecarStatus);
-  const setProgress = useAppStore((s) => s.setProgress);
-  const setInspectResult = useAppStore((s) => s.setInspectResult);
   const setError = useAppStore((s) => s.setError);
   const [builtinPdbs, setBuiltinPdbs] = useState(BUILTIN_PDBS);
 
@@ -21,19 +19,6 @@ export function StructureSelector() {
       })
       .catch(() => { /* Browser-only preview uses the repository fallback list. */ });
   }, []);
-
-  const inspectPath = async (path: string) => {
-    const { inspectStructure } = await import("../../sidecar/client");
-    setSidecarStatus("running");
-    setProgress("Starting analysis engine", 0.02);
-    setError(null);
-    try {
-      setInspectResult(await inspectStructure(path));
-      setSidecarStatus("idle");
-    } catch (error: any) {
-      setError(error?.message ?? String(error));
-    }
-  };
 
   const handleBuiltinChange = async (name: string) => {
     if (!name) return;
@@ -47,7 +32,7 @@ export function StructureSelector() {
         path = name;
       }
       setInputPath(path, true, name);
-      await inspectPath(path);
+      await preparePreviews();
     } catch (error: any) {
       setError(error?.message ?? String(error));
     }
@@ -60,10 +45,10 @@ export function StructureSelector() {
       if (path) {
         const name = path.split("/").pop()?.replace(".pdb", "") ?? "imported";
         setInputPath(path, false, name);
-        await inspectPath(path);
+        await preparePreviews();
       }
     } catch (e) {
-      console.error("Open PDB dialog failed:", e);
+      setError(e instanceof Error ? e.message : String(e));
     }
   };
 

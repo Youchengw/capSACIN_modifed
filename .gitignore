@@ -25,3 +25,8 @@ desktop/src-tauri/resources/pdb/
 systemSetup/build/
 systemSetup/dist/
 *.log
+docs/
+
+# Local release packages and scratch material
+releases/
+tmp/

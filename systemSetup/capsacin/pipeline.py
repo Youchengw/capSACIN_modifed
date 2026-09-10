@@ -114,6 +114,7 @@ class CapsidPipeline:
         self,
         progress_callback: Callable[[str, float], None] | None = None,
         cancel_event: threading.Event | None = None,
+        loaded_structure: LoadResult | None = None,
     ):
         self._progress = progress_callback
         self._cancel = cancel_event or threading.Event()
@@ -124,6 +125,11 @@ class CapsidPipeline:
         self._n_monomers: int = 0
         self._load_result: LoadResult | None = None
         self._log: list[str] = []
+        if loaded_structure is not None:
+            self._u = loaded_structure.universe
+            self._orig_chains = loaded_structure.orig_chains
+            self._n_monomers = loaded_structure.n_monomers
+            self._load_result = loaded_structure
 
     # ------------------------------------------------------------------
     # Cancellation / progress helpers
@@ -202,6 +208,7 @@ class CapsidPipeline:
         ref_indices: list[int] | None = None,
         legacy_plane_heuristic: bool = False,
         list_axes: bool = False,
+        axis_context=None,
     ) -> AxisResult:
         """Detect or validate the symmetry axis.
 
@@ -281,6 +288,7 @@ class CapsidPipeline:
                 axis_index=axis_index,
                 roi_selection=roi_selection,
                 roi_frame=roi_frame,
+                axis_context=axis_context,
             )
             result_ref_indices = list(auto_ref)
             axis_dir = list(float(v) for v in axis_dir_arr)

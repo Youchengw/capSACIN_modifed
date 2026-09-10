@@ -1,6 +1,6 @@
 [package]
 name = "capsacin-studio"
-version = "0.1.1"
+version = "0.1.2"
 description = "capSACIN Studio — Capsid Surface Abstraction Desktop App"
 authors = ["SAMPEL Group"]
 edition = "2021"

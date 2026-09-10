@@ -2,8 +2,8 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.9](https://img.shields.io/badge/python-3.9-blue.svg)](https://www.python.org/downloads/)
-[![Release v0.1.1](https://img.shields.io/badge/release-v0.1.1-2ea44f.svg)](https://github.com/Youchengw/capSACIN_modifed/releases/tag/v0.1.1)
-[![macOS Apple Silicon](https://img.shields.io/badge/macOS-Apple%20Silicon-black.svg)](https://github.com/Youchengw/capSACIN_modifed/releases/download/v0.1.1/capSACIN-Studio-v0.1.1-macOS-arm64.dmg)
+[![Release v0.1.2](https://img.shields.io/badge/release-v0.1.2-2ea44f.svg)](https://github.com/Youchengw/capSACIN_modifed/releases/tag/v0.1.2)
+[![macOS Apple Silicon](https://img.shields.io/badge/macOS-Apple%20Silicon-black.svg)](https://github.com/Youchengw/capSACIN_modifed/releases/download/v0.1.2/capSACIN-Studio-v0.1.2-macOS-arm64.dmg)
 
 A computational framework for constructing atomistic surface models of icosahedral virus capsids, enabling high-throughput molecular dynamics simulations of virus–excipient interactions without the prohibitive cost of simulating fully assembled capsids.
 
@@ -15,11 +15,11 @@ A computational framework for constructing atomistic surface models of icosahedr
 
 ### Download
 
-The current release is **v0.1.1** for Apple Silicon Macs running macOS 13 or later.
+The current release is **v0.1.2** for Apple Silicon Macs running macOS 13 or later.
 
-- [Download the macOS DMG](https://github.com/Youchengw/capSACIN_modifed/releases/download/v0.1.1/capSACIN-Studio-v0.1.1-macOS-arm64.dmg) — recommended installer.
-- [Download the zipped application](https://github.com/Youchengw/capSACIN_modifed/releases/download/v0.1.1/capSACIN-Studio-v0.1.1-macOS-arm64.zip).
-- [View the v0.1.1 release notes and checksums](https://github.com/Youchengw/capSACIN_modifed/releases/tag/v0.1.1).
+- [Download the macOS DMG](https://github.com/Youchengw/capSACIN_modifed/releases/download/v0.1.2/capSACIN-Studio-v0.1.2-macOS-arm64.dmg) — recommended installer.
+- [Download the zipped application](https://github.com/Youchengw/capSACIN_modifed/releases/download/v0.1.2/capSACIN-Studio-v0.1.2-macOS-arm64.zip).
+- [View the v0.1.2 release notes and checksums](https://github.com/Youchengw/capSACIN_modifed/releases/tag/v0.1.2).
 
 The release bundles the Python sidecar and 13 example PDB structures. A separate Python or Conda environment is not required to run the packaged application.
 
@@ -29,19 +29,21 @@ The release bundles the Python sidecar and 13 example PDB structures. A separate
 2. Drag **capSACIN Studio** into `Applications`.
 3. Launch the app and select a built-in capsid, or open a local PDB file.
 
-The v0.1.1 build is ad-hoc signed and is not notarized with an Apple Developer ID. If macOS blocks the first launch, right-click the app and choose **Open**, or allow it from **System Settings → Privacy & Security**.
+The v0.1.2 build is ad-hoc signed and is not notarized with an Apple Developer ID. If macOS blocks the first launch, right-click the app and choose **Open**, or allow it from **System Settings → Privacy & Security**.
 
 ### Desktop workflow
 
-1. Select a built-in structure or open a local PDB file.
-2. Choose a 2-fold, 3-fold, or 5-fold symmetry axis.
+1. Select a built-in structure or open a local PDB file. The app automatically prepares the 2-fold, 3-fold, and 5-fold previews in Auto mode, showing progress for each fold.
+2. Choose a symmetry fold. Prepared folds have a check mark; switching between them reuses their prepared data and only updates the 3D view.
 3. Adjust the slicing weight `ω`; larger values remove more of the capsid.
-4. Click **Prepare Preview** to detect and rank candidate symmetry axes.
+4. If you edit axis or ROI settings, click **Prepare all folds** (or **Refresh previews**) to prepare the updated configuration. Each fold remembers its selected axis candidate; weight changes reuse the existing previews.
 5. Inspect the selected axis, slicing plane, and ROI in the 3D viewer.
 6. Click **Run capSACIN** to compute the sliced structure.
 7. Switch between **Original**, **Sliced**, and **Overlay** views, then save the resulting PDB.
 
 Advanced settings expose the axis candidate rank, ROI chain and residue range, raw MDAnalysis selection overrides, and manual reference-index workflow. The legacy command-line path remains available and is documented below.
+
+Manual Reference mode retains **Prepare Preview** for the selected fold. Opening another PDB starts a new Auto-mode preparation and clears the previous structure's previews. If one fold fails, its button shows an error marker while successful folds remain available.
 
 ---
 
@@ -385,7 +387,7 @@ npm run check
 npm run tauri dev
 ```
 
-To build the complete Apple Silicon `.app` and `.dmg`, including the Python sidecar and bundled PDB files:
+To build the complete Apple Silicon `.app`, `.dmg`, and `.zip`, including the Python sidecar and bundled PDB files:
 
 ```bash
 cd desktop
@@ -393,6 +395,22 @@ cd desktop
 ```
 
 The build script requires the `capSACIN` Conda environment, PyInstaller, Node.js, and the Rust toolchain. Generated dependencies, sidecar binaries, application bundles, and Tauri build output are intentionally excluded from Git.
+
+The 13 shipped PDB files are listed explicitly in `desktop/src-tauri/tauri.conf.json`; extra local structures in `systemSetup/input/` are not included in release packages. Versioned distributable packages are collected under the ignored `releases/` directory.
+
+The script signs the Python engine separately with its library-loading entitlement, retains Hardened Runtime on both executables, and runs native startup plus all three fold preparations before packaging. Use this script for release builds so the engine's dedicated signature is preserved in the DMG and ZIP.
+
+Regression checks:
+
+```bash
+# From systemSetup/, using the capSACIN Python environment
+python -m pytest tests -q
+
+# From desktop/, using Node.js with built-in TypeScript support
+npm test
+```
+
+Frontend tests for v0.1.2 were run with Node.js 26.4.0. See [release notes](RELEASE_NOTES.md) for the changes and known limitations.
 
 ### Dependencies
 

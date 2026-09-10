@@ -1,48 +1,21 @@
 import { useAppStore } from "../../store/useAppStore";
-import type { SliceParams } from "../../sidecar/types";
+import { buildSliceParams } from "../../utils/sliceParams";
+import { preparePreviews } from "../../sidecar/preparePreviews";
 
 export function ActionButtons() {
   const inputPath = useAppStore((s) => s.inputPath);
-  const symmetry = useAppStore((s) => s.symmetry);
-  const weight = useAppStore((s) => s.weight);
   const axisMode = useAppStore((s) => s.axisMode);
-  const axisIndex = useAppStore((s) => s.axisIndex);
-  const roiSelection = useAppStore((s) => s.roiSelection);
-  const roiEnabled = useAppStore((s) => s.roiEnabled);
-  const roiFrame = useAppStore((s) => s.roiFrame);
-  const roiChain = useAppStore((s) => s.roiChain);
-  const roiStartResid = useAppStore((s) => s.roiStartResid);
-  const roiEndResid = useAppStore((s) => s.roiEndResid);
-  const refIndices = useAppStore((s) => s.refIndices);
-  const legacyPlane = useAppStore((s) => s.legacyPlane);
   const sidecarStatus = useAppStore((s) => s.sidecarStatus);
   const previewResult = useAppStore((s) => s.previewResult);
   const sliceResult = useAppStore((s) => s.sliceResult);
   const setSidecarStatus = useAppStore((s) => s.setSidecarStatus);
   const setProgress = useAppStore((s) => s.setProgress);
   const setError = useAppStore((s) => s.setError);
-  const setPreviewResult = useAppStore((s) => s.setPreviewResult);
   const setSliceResult = useAppStore((s) => s.setSliceResult);
 
   const busy = sidecarStatus === "running";
   const hasStructure = !!inputPath;
   const hasPreview = !!previewResult;
-
-  const formRoiSelection = roiStartResid > 0 && roiEndResid >= roiStartResid
-    ? `protein${roiChain ? ` and chainid ${roiChain}` : ""} and resid ${roiStartResid}:${roiEndResid}`
-    : "";
-
-  const buildParams = (): SliceParams => ({
-    input_path: inputPath,
-    symmetry,
-    auto: axisMode === "auto",
-    axis_index: axisIndex,
-    roi_selection: roiEnabled ? (roiSelection.trim() || formRoiSelection || null) : null,
-    roi_frame: roiFrame,
-    ref_indices: refIndices ? refIndices.split(",").map(Number).filter((n) => !isNaN(n)) : null,
-    legacy_plane_heuristic: legacyPlane,
-    weight,
-  });
 
   const handleOperationError = (error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
@@ -53,29 +26,6 @@ export function ActionButtons() {
       return;
     }
     setError(message);
-  };
-
-  const handlePreparePreview = async () => {
-    if (!hasStructure) return;
-    let unlisten: (() => void) | undefined;
-    try {
-      setSidecarStatus("running");
-      setError(null);
-
-      const { preparePreview, onProgress } = await import("../../sidecar/client");
-      unlisten = await onProgress((evt) => {
-        setProgress(evt.stage, evt.fraction);
-      });
-
-      const params = buildParams();
-      const result = await preparePreview(params);
-      setPreviewResult(result);
-      setSidecarStatus("idle");
-    } catch (error) {
-      handleOperationError(error);
-    } finally {
-      unlisten?.();
-    }
   };
 
   const handleRunSlice = async () => {
@@ -90,7 +40,7 @@ export function ActionButtons() {
         setProgress(evt.stage, evt.fraction);
       });
 
-      const params = buildParams();
+      const params = buildSliceParams(useAppStore.getState());
       const result = await runSlice(params);
       setSliceResult(result);
       setSidecarStatus("idle");
@@ -129,10 +79,10 @@ export function ActionButtons() {
           <button
             className="btn btn-primary"
             disabled={!hasStructure}
-            onClick={handlePreparePreview}
+            onClick={() => preparePreviews()}
             style={{ flex: 1 }}
           >
-            Prepare Preview
+            {axisMode === "auto" ? (hasPreview ? "Refresh previews" : "Prepare all folds") : "Prepare Preview"}
           </button>
         )}
 

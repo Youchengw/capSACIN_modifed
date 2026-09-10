@@ -690,7 +690,8 @@ def _find_reference_frames(monomer_dirs, best_axis, symmetry_type,
     return [frame_a, frame_b, frame_c]
 
 
-def find_symmetry_related_frames(universe, axis, symmetry_type, seed_frame=None):
+def find_symmetry_related_frames(universe, axis, symmetry_type, seed_frame=None,
+                                 *, axis_context=None):
     """Return the MODEL frames forming one local n-fold feature.
 
     The multi-MODEL capsid inputs store one symmetry copy per trajectory
@@ -711,8 +712,11 @@ def find_symmetry_related_frames(universe, axis, symmetry_type, seed_frame=None)
             f"seed_frame={seed_frame} but the trajectory has {n_frames} frames."
         )
 
-    center = compute_capsid_center(universe)
-    monomer_coms = compute_monomer_coms(universe)
+    if axis_context is None:
+        center = compute_capsid_center(universe)
+        monomer_coms = compute_monomer_coms(universe)
+    else:
+        center, monomer_coms = axis_context[:2]
     centered_coms = monomer_coms - center
     norms = np.linalg.norm(centered_coms, axis=1, keepdims=True)
     monomer_dirs = centered_coms / np.maximum(norms, 1e-12)
@@ -968,7 +972,7 @@ def compute_local_plane_diagnostics(points, detected_axis=None):
 
 
 def auto_detect_reference(universe, symmetry_type, axis_index=0,
-                          roi_selection=None, roi_frame=0):
+                          roi_selection=None, roi_frame=0, *, axis_context=None):
     """
     Automatically detect reference atom indices for a given symmetry type.
 
@@ -1006,8 +1010,8 @@ def auto_detect_reference(universe, symmetry_type, axis_index=0,
     ref_frames : list of int (length 3)
         Trajectory frames for each reference atom.
     """
-    capsid_center, monomer_coms, monomer_dirs, all_axes = _compute_axis_context(
-        universe
+    capsid_center, monomer_coms, monomer_dirs, all_axes = (
+        _compute_axis_context(universe) if axis_context is None else axis_context
     )
 
     # Step 3: Select the best axis of the requested type
@@ -1067,7 +1071,8 @@ def auto_detect_reference(universe, symmetry_type, axis_index=0,
 # selection)
 # ---------------------------------------------------------------------------
 
-def list_axes(universe, symmetry_type, roi_selection=None, roi_frame=0):
+def list_axes(universe, symmetry_type, roi_selection=None, roi_frame=0,
+              *, axis_context=None, include_references=True):
     """
     Return all candidate axes of *symmetry_type* with quality scores.
 
@@ -1084,8 +1089,10 @@ def list_axes(universe, symmetry_type, roi_selection=None, roi_frame=0):
         'ref_index' (int), 'ref_frame' (int).
         Sorted by descending score.
     """
-    capsid_center, monomer_coms, monomer_dirs, all_axes = _compute_axis_context(
-        universe
+    # Desktop candidate menus need axes and scores only. CLI callers retain
+    # the full reference-atom diagnostics by default.
+    capsid_center, monomer_coms, monomer_dirs, all_axes = (
+        _compute_axis_context(universe) if axis_context is None else axis_context
     )
     key = _axis_key(symmetry_type)
     candidates = all_axes[key]
@@ -1121,13 +1128,14 @@ def list_axes(universe, symmetry_type, roi_selection=None, roi_frame=0):
 
         score = _rotational_symmetry_score(ax, monomer_dirs, symmetry_type)
 
-        ref_idx, ref_frame = find_reference_atom(
-            universe, ax, capsid_center, symmetry_type
-        )
-        # Restore frame 0
-        universe.trajectory[0]
-        ref_atom = universe.select_atoms(f"protein and index {ref_idx}")
-        chain_id = ref_atom.chainIDs[0] if len(ref_atom) > 0 else "?"
+        ref_idx, ref_frame, chain_id = None, None, None
+        if include_references:
+            ref_idx, ref_frame = find_reference_atom(
+                universe, ax, capsid_center, symmetry_type
+            )
+            universe.trajectory[0]
+            ref_atom = universe.select_atoms(f"protein and index {ref_idx}")
+            chain_id = ref_atom.chainIDs[0] if len(ref_atom) > 0 else "?"
 
         results.append({
             "axis": ax,

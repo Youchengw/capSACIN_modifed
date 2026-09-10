@@ -9,6 +9,7 @@ import json
 import os
 import tempfile
 import threading
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
@@ -16,7 +17,7 @@ import MDAnalysis as md
 import numpy as np
 
 from capsacin.pipeline import CapsidPipeline
-from capsacin.protocol import SliceRequest
+from capsacin.protocol import SliceRequest, LoadResult, PDBInfoResult, PipelineCancelledError
 from capsacin import findSymmetryAxes
 
 from .mmcif_writer import write_aligned_mmcif, write_sliced_mmcif
@@ -47,6 +48,10 @@ def handle_inspect_structure(
         progress("inspect", 0.0, "Opening PDB...")
 
     u = md.Universe(input_path, input_path)
+    return _inspect_universe(u, input_path, progress)
+
+
+def _inspect_universe(u, input_path, progress=None, totals=None):
     orig_chains = list(np.unique(u.select_atoms("protein").chainIDs))
     n_models = u.trajectory.n_frames
 
@@ -79,11 +84,14 @@ def handle_inspect_structure(
         valid_ranges[chain] = [min_r, max_r]
 
     # Count total across all frames
-    for ts in u.trajectory:
-        for chain in orig_chains:
-            sel = u.select_atoms(f"protein and chainid {chain}")
-            total_atoms += len(sel)
-            total_residues += len(np.unique(sel.resids))
+    if totals is None:
+        for ts in u.trajectory:
+            for chain in orig_chains:
+                sel = u.select_atoms(f"protein and chainid {chain}")
+                total_atoms += len(sel)
+                total_residues += len(np.unique(sel.resids))
+    else:
+        total_atoms, total_residues = totals
 
     if progress:
         progress("inspect", 1.0, "Inspection complete")
@@ -99,11 +107,83 @@ def handle_inspect_structure(
     }
 
 
+@dataclass
+class _PreviewSource:
+    # Shared only within one request; folds run sequentially because the
+    # Universe has a mutable current frame. No structures survive the request.
+    loaded: LoadResult
+    axis_context: tuple
+    pdb_info: PDBInfoResult
+
+
+def _load_preview_source(input_path, progress=None, cancel=None):
+    pipeline = CapsidPipeline(cancel_event=cancel)
+    if progress:
+        progress("load", 0.0, "Loading PDB...")
+    loaded = pipeline.load_structure(input_path)
+    if progress:
+        progress("detect_axis", 0.07, "Finding 2-, 3- and 5-fold axes...")
+    pipeline._check_cancelled()
+    context = findSymmetryAxes._compute_axis_context(loaded.universe)
+    if progress:
+        progress("extract_pdb", 0.15, "Preparing shared atom data...")
+    pdb_info = pipeline.extract_pdb_info()
+    return _PreviewSource(loaded, context, pdb_info)
+
+
+def handle_prepare_all_previews(params, workspace_base=None, progress=None, cancel=None):
+    """Load once and prepare each fold, retaining individual fold failures."""
+    if not params.get("auto", True):
+        raise ValueError("Preparing all folds requires automatic axis selection.")
+    source = _load_preview_source(params["input_path"], progress, cancel)
+    inspection = _inspect_universe(
+        source.loaded.universe, params["input_path"],
+        totals=(source.loaded.total_atoms, source.loaded.total_residues),
+    )
+    selected = params.get("symmetry", 5)
+    folds = [selected] + [fold for fold in (2, 3, 5) if fold != selected]
+    if selected not in (2, 3, 5):
+        raise ValueError(f"Unsupported symmetry: {selected}")
+    previews, errors = {}, {}
+    indices = params.get("axis_indices", {})
+    for index, fold in enumerate(folds):
+        if cancel is not None and cancel.is_set():
+            raise PipelineCancelledError("Pipeline cancelled by user.")
+        fraction_done = 0.0
+
+        def fold_progress(stage, fraction, message=""):
+            nonlocal fraction_done
+            if stage == "prepare":
+                fraction_done = max(fraction_done, fraction)
+            if progress:
+                progress(
+                    f"Preparing {fold}-fold ({index + 1}/3)",
+                    min(1.0, 0.2 + 0.8 * (index + fraction_done) / 3),
+                    message,
+                )
+
+        default_index = params.get("axis_index", 0) if fold == selected else 0
+        fold_params = dict(params, symmetry=fold, axis_index=indices.get(str(fold), default_index))
+        try:
+            previews[str(fold)] = handle_prepare_preview(
+                fold_params, workspace_base, fold_progress, cancel,
+                prepared_source=source,
+            )
+        except PipelineCancelledError:
+            raise
+        except Exception as exc:
+            errors[str(fold)] = str(exc)
+    if progress:
+        progress("Previews prepared", 1.0, "All folds processed")
+    return {"inspection": inspection, "previews": previews, "errors": errors}
+
+
 def handle_prepare_preview(
     params: dict,
     workspace_base: Path | None = None,
     progress: Callable[[str, float, str], None] | None = None,
     cancel: threading.Event | None = None,
+    *, prepared_source: _PreviewSource | None = None,
 ) -> dict:
     """Load structure, detect axis, align, and generate viewer mmCIF.
 
@@ -129,12 +209,14 @@ def handle_prepare_preview(
     if progress:
         progress("prepare", 0.0, "Creating workspace...")
 
-    # Get axis candidates first
-    u = md.Universe(input_path, input_path)
+    source = prepared_source or _load_preview_source(input_path, progress, cancel)
+    u = source.loaded.universe
     axis_rows = findSymmetryAxes.list_axes(
         u, symmetry,
         roi_selection=roi_selection,
         roi_frame=roi_frame,
+        axis_context=source.axis_context,
+        include_references=False,
     )
 
     candidates = []
@@ -143,9 +225,8 @@ def handle_prepare_preview(
             "axis_index": row["axis_index"],
             "axis": [round(float(v), 6) for v in row["axis"]],
             "score": round(float(row["score"]), 6),
-            "ref_index": row.get("ref_index"),
-            "ref_frame": row.get("ref_frame"),
-            "chain_id": row.get("chain_id"),
+            **{key: row[key] for key in ("ref_index", "ref_frame", "chain_id")
+               if row.get(key) is not None},
         })
         if roi_selection:
             candidates[-1]["roi_score"] = round(float(row.get("roi_score", 0)), 6)
@@ -171,21 +252,23 @@ def handle_prepare_preview(
     pipeline = CapsidPipeline(
         progress_callback=progress if progress else None,
         cancel_event=cancel,
+        loaded_structure=source.loaded,
     )
 
     # Run stages 1-5 (load through align)
-    load_result = pipeline.load_structure(input_path)
+    load_result = source.loaded
     axis_result = pipeline.detect_axis(
         symmetry=symmetry, auto=auto_mode,
         axis_index=axis_index, roi_selection=roi_selection,
         roi_frame=roi_frame, ref_indices=request.ref_indices,
         legacy_plane_heuristic=legacy_plane,
+        axis_context=source.axis_context,
     )
     plane_result = pipeline.select_plane_points(
         axis_result=axis_result, symmetry=symmetry,
         auto_mode=auto_mode, legacy_plane_heuristic=legacy_plane,
     )
-    pdb_info = pipeline.extract_pdb_info()
+    pdb_info = source.pdb_info
     align_result = pipeline.align_coordinates(
         pdb_info=pdb_info, plane_result=plane_result,
         symmetry=symmetry, auto_mode=auto_mode,
@@ -217,7 +300,9 @@ def handle_prepare_preview(
         # A user frame is meaningful only when that ROI actually selected the
         # axis. For global ranking, derive the local copies from the axis.
         seed_frame=roi_frame if roi_selection else None,
+        axis_context=source.axis_context,
     )
+    pipeline._check_cancelled()
 
     if progress:
         progress("prepare", 1.0, "Preview ready")

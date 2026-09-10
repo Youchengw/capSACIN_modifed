@@ -8,6 +8,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
   InspectResult, PreparePreviewResult, RunSliceResult,
   SidecarProgress, SidecarResult, SliceParams,
+  PrepareAllPreviewsResult, SymmetryFold,
 } from "./types";
 
 // ---- Event listeners ----
@@ -28,6 +29,12 @@ export async function inspectStructure(inputPath: string): Promise<InspectResult
 
 export async function preparePreview(params: SliceParams): Promise<PreparePreviewResult> {
   return invoke<PreparePreviewResult>("prepare_preview", { params });
+}
+
+export async function prepareAllPreviews(
+  params: SliceParams & { axis_indices: Record<SymmetryFold, number> },
+): Promise<PrepareAllPreviewsResult> {
+  return invoke<PrepareAllPreviewsResult>("prepare_all_previews", { params });
 }
 
 export async function runSlice(params: SliceParams): Promise<RunSliceResult> {

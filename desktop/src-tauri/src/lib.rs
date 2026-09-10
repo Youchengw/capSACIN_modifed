@@ -223,6 +223,13 @@ async fn prepare_preview(app: AppHandle, params: serde_json::Value) -> PendingRe
 }
 
 #[tauri::command]
+async fn prepare_all_previews(app: AppHandle, params: serde_json::Value) -> PendingResult {
+    let mut values = params.as_object().cloned().unwrap_or_default();
+    values.remove("weight");
+    call_sidecar(&app, "prepare_all_previews", serde_json::Value::Object(values)).await
+}
+
+#[tauri::command]
 async fn run_slice(app: AppHandle, params: serde_json::Value) -> PendingResult {
     call_sidecar(&app, "run_slice", params).await
 }
@@ -343,6 +350,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             inspect_structure,
             prepare_preview,
+            prepare_all_previews,
             run_slice,
             cancel_operation,
             open_pdb_dialog,

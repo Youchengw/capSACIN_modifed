@@ -47,9 +47,23 @@ install -m 755 "$SIDECAR_DIST/capsacin-sidecar" \
     "$SCRIPT_DIR/src-tauri/binaries/$SIDECAR_NAME"
 echo "  → Sidecar built: $SIDECAR_NAME"
 
-# Step 2: Copy bundled PDBs
+# Step 2: Validate the release's explicitly selected built-in PDBs. Local
+# structures can remain in input/ without silently entering the installer.
 echo "[2/6] Checking bundled PDB resources..."
-PDB_COUNT=$(find "$SYSTEM_SETUP/input" -maxdepth 1 -name '*.pdb' -type f | wc -l | tr -d ' ')
+PDB_COUNT=$("${PYTHON[@]}" - "$SCRIPT_DIR/src-tauri/tauri.conf.json" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+config_path = Path(sys.argv[1])
+resources = json.loads(config_path.read_text())["bundle"]["resources"]
+for source in resources:
+    path = (config_path.parent / source).resolve()
+    if not path.is_file():
+        raise FileNotFoundError(f"Bundled PDB not found: {path}")
+print(len(resources))
+PY
+)
 if [[ "$PDB_COUNT" -ne 13 ]]; then
     echo "Expected 13 built-in PDB files, found $PDB_COUNT."
     exit 1
@@ -62,22 +76,47 @@ cd "$SCRIPT_DIR"
 npm ci
 echo "  → Dependencies installed"
 
-# Step 4: Build frontend
-echo "[4/6] Building frontend..."
-npm run build
-echo "  → Frontend built"
+# Step 4: Check frontend. Tauri's beforeBuildCommand builds it in step 5.
+echo "[4/6] Checking frontend..."
+npm run check
+echo "  → Frontend check passed"
 
 # Step 5: Build Tauri app
 echo "[5/6] Building Tauri app bundle..."
 cd "$SCRIPT_DIR"
-npm run tauri build -- --target "$TARGET_TRIPLE"
+npm run tauri build -- --target "$TARGET_TRIPLE" --bundles app --ci
 
-echo "[6/6] Running packaged-app startup smoke test..."
-APP_EXEC="$SCRIPT_DIR/src-tauri/target/$TARGET_TRIPLE/release/bundle/macos/capSACIN Studio.app/Contents/MacOS/capsacin-studio"
-CAPSACIN_STARTUP_CHECK=1 "$APP_EXEC"
-echo "  → Tauri and plugins initialized successfully"
+echo "[6/6] Signing, exercising and packaging the application..."
+APP="$SCRIPT_DIR/src-tauri/target/$TARGET_TRIPLE/release/bundle/macos/capSACIN Studio.app"
+# Tauri applies the same entitlements to every binary. Sign the Python engine
+# separately so only it can load PyInstaller's extracted ad-hoc libraries.
+codesign --force --sign - --options runtime \
+    --entitlements "$SCRIPT_DIR/src-tauri/sidecar.entitlements.plist" \
+    "$APP/Contents/MacOS/capsacin-sidecar"
+# Do not use --deep when signing: preserve the engine's separate entitlements.
+codesign --force --sign - --options runtime "$APP"
+codesign --verify --deep --strict "$APP"
+"${PYTHON[@]}" "$SCRIPT_DIR/check_packaged_app.py" "$APP"
+
+VERSION=$("${PYTHON[@]}" -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' \
+    "$SCRIPT_DIR/src-tauri/tauri.conf.json")
+RELEASE_DIR="$PROJECT_ROOT/releases/v$VERSION"
+ASSET="capSACIN-Studio-v$VERSION-macOS-arm64"
+mkdir -p "$RELEASE_DIR"
+ditto "$APP" "$RELEASE_DIR/capSACIN Studio.app"
+STAGING=$(mktemp -d /tmp/capsacin-dmg.XXXXXX)
+trap 'rm -rf "$STAGING"' EXIT
+ditto "$APP" "$STAGING/capSACIN Studio.app"
+ln -s /Applications "$STAGING/Applications"
+# Package the already signed app directly. Re-running Tauri's DMG bundler
+# would replace the engine signature and its dedicated entitlements.
+hdiutil create -ov -volname "capSACIN Studio" -srcfolder "$STAGING" \
+    -format UDZO "$RELEASE_DIR/$ASSET.dmg"
+hdiutil verify "$RELEASE_DIR/$ASSET.dmg"
+ditto -c -k --sequesterRsrc --keepParent "$APP" "$RELEASE_DIR/$ASSET.zip"
+cp "$PROJECT_ROOT/RELEASE_NOTES.md" "$RELEASE_DIR/RELEASE_NOTES.md"
+(cd "$RELEASE_DIR" && shasum -a 256 "$ASSET.dmg" "$ASSET.zip" > SHA256SUMS.txt)
 
 echo ""
 echo "=== Build complete ==="
-echo "App:  src-tauri/target/$TARGET_TRIPLE/release/bundle/macos/"
-echo "DMG:  src-tauri/target/$TARGET_TRIPLE/release/bundle/dmg/"
+echo "App, DMG, ZIP and checksums: $RELEASE_DIR"

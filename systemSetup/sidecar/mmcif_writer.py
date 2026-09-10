@@ -116,28 +116,28 @@ def write_aligned_mmcif(
     # Build frame → chain mapping for unique asym IDs
     # The chains DataFrame uses artificial single-letter chain IDs (A-Z etc.).
     # Map each back to (frame, original_chain).
+    columns = {name: chains[name].values for name in chains.columns}
+    viewer_indices = columns.get("viewer_chain_index")
+    asym_ids = {}
     for i in range(n_atoms):
-        atom_type = str(chains.atom.values[i]).strip()
-        atom_id = str(chains.idx.values[i]).strip()
-        atom_name = str(chains.name.values[i]).strip()
-        element = str(chains.type.values[i]).strip() or atom_name[0]
-        res_name = str(chains.resname.values[i]).strip()
-        artificial_chain = str(chains.chain.values[i]).strip()
-        resid = str(chains.resids.values[i]).strip()
-        occ = str(chains.occ.values[i]).strip()
+        atom_type = str(columns["atom"][i]).strip()
+        atom_id = str(columns["idx"][i]).strip()
+        atom_name = str(columns["name"][i]).strip()
+        element = str(columns["type"][i]).strip() or atom_name[0]
+        res_name = str(columns["resname"][i]).strip()
+        artificial_chain = str(columns["chain"][i]).strip()
+        resid = str(columns["resids"][i]).strip()
+        occ = str(columns["occ"][i]).strip()
         b_factor = f"{nz[i]:.3f}"
 
         # Decode artificial chain back to frame and original chain
-        flat_chain_index = (
-            chains.viewer_chain_index.values[i]
-            if "viewer_chain_index" in chains.columns
-            else None
-        )
-        asym_id = _viewer_asym_id(
-            artificial_chain,
-            orig_chains,
-            flat_chain_index,
-        )
+        flat_chain_index = viewer_indices[i] if viewer_indices is not None else None
+        identity = (artificial_chain, flat_chain_index)
+        if identity not in asym_ids:
+            asym_ids[identity] = _viewer_asym_id(
+                artificial_chain, orig_chains, flat_chain_index,
+            )
+        asym_id = asym_ids[identity]
 
         lines.append(
             f"{atom_type} {atom_id} {element} {atom_name} {res_name} "
