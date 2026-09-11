@@ -11,7 +11,9 @@ Built on [SAMPEL-Group/capSACIN](https://github.com/SAMPEL-Group/capSACIN). For 
 - [Download DMG](https://github.com/Youchengw/capSACIN_modifed/releases/download/v0.1.2/capSACIN-Studio-v0.1.2-macOS-arm64.dmg) — open and drag the app into Applications.
 - [ZIP, checksums, and release details](https://github.com/Youchengw/capSACIN_modifed/releases/tag/v0.1.2).
 
-Python and 13 example PDBs are bundled. No separate Conda installation is needed. The app is ad-hoc signed and not notarized; if macOS blocks opening it, allow it in **System Settings → Privacy & Security**.
+Python and 13 example PDBs are bundled. No separate Conda installation is needed.
+
+The app is ad-hoc signed and has not been notarized by Apple. If macOS blocks it on first launch, follow [Apple's guide to opening an app from an unknown developer](https://support.apple.com/en-gb/guide/mac-help/mh40616/mac).
 
 ## Use
 
