@@ -41,15 +41,17 @@ The v0.1.2 build is ad-hoc signed and is not notarized with an Apple Developer I
 6. Click **Run capSACIN** to compute the sliced structure.
 7. Switch between **Original**, **Sliced**, and **Overlay** views, then save the resulting PDB.
 
-Advanced settings expose the axis candidate rank, ROI chain and residue range, raw MDAnalysis selection overrides, and manual reference-index workflow. The legacy command-line path remains available and is documented below.
+Advanced settings expose the axis candidate rank, ROI chain and residue range, raw MDAnalysis selection overrides, and manual reference-index workflow. The command-line interface is documented below.
 
 Manual Reference mode retains **Prepare Preview** for the selected fold. Opening another PDB starts a new Auto-mode preparation and clears the previous structure's previews. If one fold fails, its button shows an error marker while successful folds remain available.
+
+Prepared previews are reused for the currently loaded structure during the app session. Reopening a PDB or restarting the app prepares it again. The engine's first startup and the viewer's parsing/rendering can still take time; **Run capSACIN** runs the full slicing pipeline separately. See [release notes](RELEASE_NOTES.md) for measured timings and limitations.
 
 ---
 
 ## Overview
 
-Viral biologics — vaccines, gene therapy vectors, and virus-like particles (VLPs) — require cold-chain storage to maintain potency. Excipients (small-molecule additives) can stabilize these products, but excipient selection is a costly trial-and-error process. Molecular dynamics (MD) simulations can reveal the atomistic mechanisms of excipient–virus interactions, yet even the smallest fully assembled capsids contain **millions of atoms**, requiring massive supercomputing resources for meaningful sampling (see table below).
+Viral biologics — vaccines, gene therapy vectors, and virus-like particles (VLPs) — require cold-chain storage to maintain potency. Excipients (small-molecule additives) can stabilize these products, but excipient selection is a costly trial-and-error process. Molecular dynamics (MD) simulations can reveal the atomistic mechanisms of excipient–virus interactions. Simulating an assembled capsid together with its solvent and other components can involve **millions of atoms**, making adequate sampling expensive (see examples below).
 
 | Virus | System Size | Performance | Year |
 |---|---|---|---|
@@ -66,6 +68,8 @@ The method was validated on porcine parvovirus (PPV, PDB: 1K3V) and shown to cor
 ## The CapSACIN Workflow
 
 The workflow consists of six steps, of which **Steps 1–3 are implemented in this repository**. Steps 4–6 are performed with an external MD engine (GROMACS).
+
+The MD protocol and scientific results described below refer to the original PPV study cited at the end of this README. The desktop release provides structure preparation and visualization; it does not perform or independently validate those MD simulations.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -87,49 +91,52 @@ The workflow consists of six steps, of which **Steps 1–3 are implemented in th
 
 ### Step 1: Symmetry-Based Alignment
 
-The input capsid (a PDB file) is reoriented so the chosen symmetry axis is perpendicular to the xy-plane (aligned with the z-axis). This is achieved by:
+The input capsid is reoriented so the chosen symmetry axis aligns with the positive z-axis. The alignment method depends on the selected mode:
 
-1. Selecting a **reference atom** within the ROI.
-2. Finding **two symmetry-related atoms** at the same ROI across the icosahedral capsid (chosen based on fold type: 2-fold, 3-fold, or 5-fold).
-3. Computing the **plane normal** defined by the three reference atoms via cross product.
-4. Applying **Rodrigues' rotation formula** to align the normal vector with `[0, 0, 1]`.
+- **Auto:** Search for rotational symmetry using one protein coordinate center per MODEL. Rank candidate axes by symmetry score, or by ROI proximity when an ROI is supplied. By default, the selected global axis determines the rotation; reference atoms provide local geometry diagnostics.
+- **Manual Reference:** Start from a zero-based atom index and find matching atoms across capsid copies. The current implementation uses a five-point ring for 5-fold alignment, paired atoms for 2-fold alignment, and three reference points for 3-fold alignment, fitting the local plane by SVD. The 3-fold path retains small z-perturbations of two reference points.
+- **Legacy plane heuristic:** The CLI flag `--legacy-plane-heuristic` restores the three-point cross-product method with z-perturbations. This is not the default Auto alignment method.
 
-**Relevant code:** `sliceCapsid.py` lines 55–168, `capsacin/definePlane.py`
+The resulting direction is rotated to `[0, 0, 1]` with Rodrigues' formula.
+
+**Relevant code:** [pipeline.py](systemSetup/capsacin/pipeline.py), [findSymmetryAxes.py](systemSetup/capsacin/findSymmetryAxes.py), [definePlane.py](systemSetup/capsacin/definePlane.py).
 
 ### Step 2: Surface Abstraction
 
 The aligned capsid is sliced at a height defined by a **weight parameter ω ∈ [0, 1]**:
 
-- Atoms with `rz < ω · max(z)` are removed.
-- ω = 0 retains the full capsid; ω = 1 removes all atoms.
-- For PPV, ω = 0.7 provides a 2:1 ratio of peripheral to ROI proteins.
+- After shifting the aligned coordinates so `min(z) = 0`, atoms with `z < ω · max(z)` are removed.
+- ω is a fraction of aligned **height**, not a fraction of atoms or chains. At ω = 0 all atoms pass the height cutoff; at ω = 1 only atoms at the maximum z-coordinate pass before chain/residue cleanup, which can leave an empty model.
+- The PPV study used ω = 0.7 for its chosen surface geometry. The retained proteins and peripheral-to-ROI ratio depend on the selected axis and alignment configuration.
 
 After slicing, a cleanup procedure removes:
+
 - **Fragmented chains** (monomers with fewer residues than expected from the input structure).
-- **Broken residues** at the cut boundary (residues with fewer heavy atoms than the canonical count for their amino acid type).
+- **Boundary residues** within 10 Å of the cut bottom whose atom counts differ from the reference count for their residue type, followed by another fragmented-chain check. These reference counts come from the first matching residue of each standard amino acid type in input chain A; they are not a canonical heavy-atom table.
 
 The remaining surface is translated so its minimum z-coordinate is at z = 0, and chain IDs are remapped to a compact character set (A–Z, 0–9, symbols).
 
-**Relevant code:** `sliceCapsid.py` lines 198–310, `capsacin/createDictionary.py`
+**Relevant code:** `CapsidPipeline.slice_by_weight()`, `cleanup_broken()`, and `finalize_and_write()` in [pipeline.py](systemSetup/capsacin/pipeline.py), plus [createDictionary.py](systemSetup/capsacin/createDictionary.py).
 
 ### Step 3: Position Restraint Generation
 
 To preserve capsid structural integrity during solvent equilibration while allowing the ROI to remain flexible, **scaled position restraints** are applied using an inverse sigmoid function:
 
 ```
-s(rz,i) = 1 / (1 + exp(rz,i / κ))
-K_i = s_i · K_max        (K_max = 1000 kJ mol⁻¹ nm⁻², κ = 0.1)
+z_norm,i = 2 · (z_i − min(z_transition)) / (max(z_transition) − min(z_transition)) − 1
+s_i = 1 / (1 + exp(z_norm,i / κ))
+K_i = s_i · 1000 · weight       (κ = 0.1; K_i in kJ mol⁻¹ nm⁻²)
 ```
 
 The restraint scheme creates three zones:
 
 | z-range | Restraint Strength | Purpose |
 |---|---|---|
-| z < 1.5 nm | Full (K = 1000) | Lock peripheral base |
-| 1.5–3.0 nm | Scaled via sigmoid | Smooth transition zone |
-| z > 3.0 nm | Zero (K = 0) | Fully flexible ROI |
+| z < 1.5 nm | Full (K = 1000 × weight) | Lock peripheral base |
+| 1.5 ≤ z < 3.0 nm | Scaled via sigmoid | Smooth transition zone |
+| z ≥ 3.0 nm | Zero (K = 0) | Fully flexible ROI |
 
-An implicit wall (GROMACS Walls) is placed at z = 0 and z = h_box, preventing excipient diffusion into the capsid interior through periodic boundaries.
+The normalization uses the observed atom heights in the 1.5–3.0 nm transition band. GROMACS wall settings at z = 0 and z = h_box belong to the external simulation setup; `genRestraints.py` generates position-restraint files only.
 
 **Relevant code:** `genRestraints.py`
 
@@ -158,10 +165,13 @@ The fraction of native interfacial contacts, Q_IF, is tracked over the pulling t
 ```
 capSACIN/
 ├── README.md                          # This file
+├── RELEASE_NOTES.md                   # Current desktop release changes and limitations
 ├── LICENSE                            # MIT License
 ├── desktop/                           # Tauri + React desktop application
 │   ├── build_app.sh                   # Complete macOS packaging workflow
+│   ├── check_packaged_app.py          # Native startup and packaged-engine smoke check
 │   ├── src/                           # React controls and Mol* viewer
+│   ├── tests/                         # Frontend state and preview regression tests
 │   └── src-tauri/                     # Rust host, bundle config, and icons
 ├── env/
 │   ├── create-env.sh                  # Conda environment setup script
@@ -171,7 +181,8 @@ capSACIN/
     ├── examples.dat                   # Example CLI invocations for various capsids
     ├── sliceCapsid.py                 # ★ Main script: Steps 1 & 2 (alignment + slicing)
     ├── genRestraints.py               # ★ Step 3 (position restraint generation)
-    ├── input/                         # 13 bundled capsid PDB structures
+    ├── inspectResidueRanges.py        # Inspect MODEL/chain residue ranges for ROI selection
+    ├── input/                         # 13 tracked examples; may also contain local PDBs
     ├── capsacin/                      # Reusable alignment and slicing pipeline
     │   ├── pipeline.py                # Desktop/CLI-compatible computation pipeline
     │   ├── protocol.py                # Sidecar request and result schema
@@ -187,7 +198,7 @@ capSACIN/
 
 ### `sliceCapsid.py` — Main Workflow Script
 
-Implements **Steps 1 and 2** of the CapSACIN workflow. This is the primary entry point.
+Implements **Steps 1 and 2** of the CapSACIN workflow. This is the CLI entry point; computation is delegated to `CapsidPipeline` in `capsacin/pipeline.py`, also used by the desktop sidecar. Run CLI commands from `systemSetup/`.
 
 **CLI Arguments:**
 
@@ -195,28 +206,25 @@ Implements **Steps 1 and 2** of the CapSACIN workflow. This is the primary entry
 |---|---|---|---|
 | `--pdb` | str | `9jjh` | PDB filename prefix (reads from `input/{pdb}.pdb`) |
 | `--symmetry` | int | `5` | Symmetry axis: `2`, `3`, or `5` (2-fold, 3-fold, or 5-fold) |
-| `--refindex` | int[] | `[1058]` | VMD-format atom indices for the reference atom in the ROI |
-| `--weight` | float | `0.5` | Slicing fraction ω ∈ [0,1]; 0 = no slice, 0.5 = half, 1 = empty |
+| `--refindex` | int[] | `[1058]` | Zero-based reference atom indices for Manual mode; matching copies are located from the first index |
+| `--weight` | float | `0.5` | Height cutoff fraction ω ∈ [0,1]; keep `z ≥ ω · max(z)` before cleanup |
 | `--plot` | flag | off | Enable 3D matplotlib visualizations for debugging |
 | `--auto` | flag | off | Automatically detect the requested symmetry axis and reference atoms |
 | `--axis-index` | int | `0` | Candidate axis rank to use; ROI-ranked when `--roi-selection` is set |
 | `--roi-selection` | str | `None` | MDAnalysis selection for ROI-aware automatic axis selection |
 | `--roi-frame` | int | `0` | MODEL/frame containing the physical ROI copy described by `--roi-selection` |
 | `--list-axes` | flag | off | Print candidate axes and exit unless `--auto` is also set |
+| `--legacy-plane-heuristic` | flag | off | Use the legacy three-point cross-product alignment with z-perturbations |
 
 **Algorithm flow:**
-1. Load PDB via `MDAnalysis.Universe`
-2. Identify the reference atom (`pointA`) and two symmetry-related atoms (`pointB`, `pointC`)
-   - The selection of `pointB` and `pointC` depends on `--symmetry`:
-     - 2-fold: nearest and 2nd-nearest same-atom neighbors
-     - 3-fold: 2nd- and 3rd-nearest neighbors (k1=1, k2=2)
-     - 5-fold: 2nd- and 4th-nearest neighbors (k1=1, k2=3)
-3. Compute the plane normal of the three reference atoms (`definePlane.py`)
-4. Rotate all coordinates so the normal aligns with `[0, 0, 1]` (Rodrigues' rotation)
-5. Center coordinates: COM at origin, min z = 0, min x,y ≥ 0
-6. Slice by z-coordinate: keep atoms with `z ≥ ω · max(z)`
-7. Clean up broken chains and incomplete residues at the cut boundary
-8. Remap chain IDs and save to `output/{pdb}-sliced-sym{symmetry}-w{weight}.pdb`
+
+1. Load PDB via `MDAnalysis.Universe`, treating MODELs as spatial capsid copies.
+2. Select a global symmetry axis in Auto mode, or a local reference plane in Manual mode, as described in Step 1 above.
+3. Collect protein coordinates across MODELs and chains, and rotate the selected direction to `[0, 0, 1]`.
+4. Center the coordinates, then translate each coordinate minimum to zero.
+5. Slice by height: keep atoms with `z ≥ ω · max(z)`.
+6. Clean up fragmented chains and boundary residues.
+7. Remap chain IDs and save to `output/{pdb}-sliced-sym{symmetry}-w{weight}.pdb`.
 
 **ROI-aware automatic axis selection:**
 
@@ -231,10 +239,9 @@ far from every candidate axis, or lies roughly perpendicular to all candidates,
 the ranking still returns the closest geometric match, but the result is less
 biophysically meaningful and should be inspected with `--list-axes`.
 
-For 2-fold automatic alignment, CapSACIN keeps the legacy convention where
-`pointB` comes from the same monomer as `pointA` and is separated by a small
-z-perturbation before alignment. This preserves backward compatibility with
-the original 2-fold slicing heuristic.
+For default 2-fold automatic alignment, the detected global axis determines
+the rotation. Local paired-atom plane measurements are diagnostics. Enable
+`--legacy-plane-heuristic` explicitly to use the original three-point method.
 
 ```bash
 # Inspect the 5-fold axes closest to residues 250-290 on MODEL/frame 0
@@ -257,10 +264,11 @@ Implements **Step 3** of the CapSACIN workflow.
 | Argument | Type | Default | Description |
 |---|---|---|---|
 | `--pdb` | str | *required* | PDB filename prefix used for `sliceCapsid.py` output |
-| `--weight` | float | `1.0` | Global scaling factor for restraint force constants |
+| `--weight` | float | `1.0` | Both the weight in the input PDB filename and a multiplier for restraint force constants |
 | `--symmetry` | int | `None` | Symmetry used for the sliced PDB name; omit only for legacy `output/{pdb}-sliced-w{weight}.pdb` files |
 
 **Algorithm:**
+
 1. Read the sliced PDB from `sliceCapsid.py` output
 2. Classify atoms by z-coordinate:
    - **z < 15 Å:** Full restraint (`K = 1000 × weight`)
@@ -270,15 +278,18 @@ Implements **Step 3** of the CapSACIN workflow.
 
 **Output:** Directory `output/{pdb}-w{weight}-posre/` containing one `.itp` file per chain.
 
+Use the same `--weight` as the sliced filename: for example, `--weight 0.7` reads the `-w0.7.pdb` model and sets the full-strength zone to 700 kJ mol⁻¹ nm⁻². The current script does not expose separate filename and restraint-scale arguments. Its output directory also omits symmetry, so generating restraints for another fold at the same PDB/weight can overwrite files; copy each result elsewhere before the next run. The script displays a matplotlib plot during execution; `MPLBACKEND=Agg` can be used for a noninteractive run.
+
 ---
 
 ### `capsacin/definePlane.py`
 
-Computes the **normal vector** of the plane defined by three 3D points using the cross product `u × v`, where `u` and `v` are vectors from the center-of-mass to two of the points.
+Geometry helpers used by the alignment pipeline:
 
-**Function:** `definePlane(x, y, z)` → returns the normal vector (length proportional to the area spanned by u,v).
-
-Optionally generates a 3D matplotlib plot showing the points, plane, and normal vector.
+- `fit_plane_normal(points, reference_direction)` fits an SVD plane and returns a unit normal, RMSD, and singular values.
+- `select_5fold_ring(copies, pointA)` selects five distance-ranked reference copies.
+- `compute_pentagon_diagnostics(ring, global_axis)` reports ring geometry and optional local/global alignment measurements.
+- `definePlane(x, y, z)` retains the legacy three-point cross-product implementation and optional plotting.
 
 ---
 
@@ -299,15 +310,15 @@ Formats a pandas DataFrame's columns to conform to the **fixed-width PDB file fo
 
 Two dictionary utilities:
 
-- **`createDictionary(u)`**: Queries an MDAnalysis Universe for chain A and builds a dictionary mapping each of the 20 standard amino acid three-letter codes to its expected **heavy atom count**. Used to detect broken residues at the slicing boundary.
+- **`createDictionary(u)`**: Uses the first matching residue of each standard amino acid type in input chain A to build reference atom counts. Counts reflect the atoms present in the input, including hydrogens if present. Used by the boundary-residue cleanup.
 
-- **`createChainDictionary(chainValues)`**: Maps a list of old chain IDs to a compact pool of characters (A–Z, 0–9, then symbols: `!@#$%^&-_=+;:'",.<>?/\\|\`~`). The PDB format only reliably supports single-character chain IDs; this remapping ensures output compatibility (and warns if >60 unique chains are present).
+- **`createChainDictionary(chainValues)`**: Maps old chain IDs to a pool of 60 single-character identifiers (A–Z, 0–9, then symbols). It raises an error when the pool is exhausted; it does not silently reuse identifiers. Check symbol-containing chain IDs with the intended downstream tool.
 
 ---
 
 ### `capsacin/alignSymmetry.py` (Legacy)
 
-The original monolithic development script from which `sliceCapsid.py` was refactored. It contains the identical core algorithm but with **hardcoded parameters** instead of CLI arguments. Retained for reference:
+The original monolithic development script with **hardcoded parameters** instead of CLI arguments. It is a historical reference and does not include the current `CapsidPipeline` implementation:
 
 - Lines 22–59 contain an extensive commented-out library of `indicesVMD` values for different PDB entries and symmetry types. This serves as a historical reference for atom indices used in various capsid structures.
 - Includes additional debugging plots not present in the CLI version.
@@ -329,7 +340,24 @@ A custom **MDAnalysis reader/parser** for CIF (Crystallographic Information File
 
 ## Input PDB Structures
 
-The `input/` directory contains 13 experimentally resolved icosahedral virus capsid structures from the Protein Data Bank:
+The repository tracks the following 13 example capsid PDBs in `systemSetup/input/`; the desktop release bundles the same list. Additional local files may be present in that directory.
+
+### Input representation
+
+Automatic axis detection expects a multi-MODEL PDB with spatial symmetry-related copies of the same asymmetric unit in a common coordinate system. It computes one protein coordinate center per MODEL; these MODELs represent capsid copies, not time frames from an MD trajectory. MODELs must have compatible atom ordering/topology for MDAnalysis to read them as frames. A single-MODEL file containing many chains does not provide the per-MODEL centers this detector uses. It also does not expand a single asymmetric unit from PDB symmetry records.
+
+The CLI reads `systemSetup/input/{prefix}.pdb`; the desktop file picker opens local `.pdb` files. GRO and mmCIF are not supported input paths for these interfaces. The desktop generates mmCIF internally for visualization.
+
+Before selecting an ROI, inspect the actual chain IDs and deposited residue ranges:
+
+```bash
+# From systemSetup/
+python inspectResidueRanges.py 1k3v --per-model-limit 3
+```
+
+`--roi-frame` is the zero-based MDAnalysis frame position in the file. For the bundled sequential MODEL numbering, MODEL 1 corresponds to frame 0. The helper prints `MODEL number - 1`, so check the file order yourself for nonsequential MODEL numbers. Use residue IDs present in the coordinates when defining `--roi-selection`.
+
+### Bundled structures
 
 | PDB ID | Virus / System |
 |---|---|
@@ -358,14 +386,14 @@ Desktop users should install the packaged application from the [latest release](
 ### Prerequisites
 
 - [Conda](https://docs.conda.io/en/latest/) with Python 3.9
-- Node.js 18 or later for desktop frontend development
+- Node.js 22.18+ on the 22.x line, or Node.js 24+, with npm for desktop development and tests. The tests use Node's [built-in TypeScript support](https://nodejs.org/download/release/v22.21.0/docs/api/typescript.html); the locked Sass dependency also requires Node.js 20.19 or later.
 - Rust and Cargo for native desktop builds
 
 ### Python CLI setup
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/Youchengw/capSACIN_modifed.git
+git clone https://github.com/Youchengw/capSACIN_modifed.git capSACIN
 cd capSACIN
 
 # 2. Create and activate the conda environment
@@ -380,12 +408,21 @@ python -c "from capsacin import definePlane, formatPDB, createDictionary; print(
 
 ### Desktop development
 
+On an Apple Silicon Mac, first create the Python environment above. A fresh clone needs the Python sidecar binary before `tauri dev` can run. From the repository root:
+
 ```bash
-cd desktop
+conda activate capSACIN
+cd systemSetup
+python -m PyInstaller sidecar/capsacin_sidecar.spec --noconfirm
+mkdir -p ../desktop/src-tauri/binaries
+install -m 755 dist/capsacin-sidecar ../desktop/src-tauri/binaries/capsacin-sidecar-aarch64-apple-darwin
+cd ../desktop
 npm ci
 npm run check
 npm run tauri dev
 ```
+
+Rebuild the sidecar after changing Python code; the desktop launches that bundled executable. For CLI-only work, run the Python scripts directly.
 
 To build the complete Apple Silicon `.app`, `.dmg`, and `.zip`, including the Python sidecar and bundled PDB files:
 
@@ -397,6 +434,8 @@ cd desktop
 The build script requires the `capSACIN` Conda environment, PyInstaller, Node.js, and the Rust toolchain. Generated dependencies, sidecar binaries, application bundles, and Tauri build output are intentionally excluded from Git.
 
 The 13 shipped PDB files are listed explicitly in `desktop/src-tauri/tauri.conf.json`; extra local structures in `systemSetup/input/` are not included in release packages. Versioned distributable packages are collected under the ignored `releases/` directory.
+
+The local `literature-review-automated-symmetry-detection.md`, `docs/`, and generated packages are excluded from Git. Keep these local materials separate from source changes when preparing commits.
 
 The script signs the Python engine separately with its library-loading entitlement, retains Hardened Runtime on both executables, and runs native startup plus all three fold preparations before packaging. Use this script for release builds so the engine's dedicated signature is preserved in the DMG and ZIP.
 
@@ -418,7 +457,7 @@ Frontend tests for v0.1.2 were run with Node.js 26.4.0. See [release notes](RELE
 |---|---|---|
 | `numpy` | 1.26.4 | Array operations, linear algebra |
 | `matplotlib` | 3.7.1 | Optional 3D visualization (`--plot` flag) |
-| `MDAnalysis` | 2.4.3 | PDB parsing, atom selection, distance computation |
+| `MDAnalysis` | Conda-resolved; not pinned by the setup script | PDB parsing, atom selection, distance computation |
 | `tqdm` | 4.65.0 | Progress bars for chain/residue iteration |
 | `pandas` | 1.5.3 | Tabular atom data manipulation |
 | `pytest` | 8.x | Pipeline and sidecar regression tests |
@@ -465,7 +504,7 @@ python genRestraints.py --pdb 1k3v --symmetry 5 --weight 0.7
 
 ### 3. Running MD simulations (external)
 
-After generating the surface model and restraints, proceed with GROMACS:
+After generating the surface model and restraints, prepare the force-field topology, solvent/ions, simulation box, and `.mdp` settings for the intended experiment. The commands below illustrate the external stages; the referenced `surface.pdb`, `.mdp`, and `topol.top` files must be supplied and configured by the user.
 
 ```bash
 # Step 4: Restrained equilibration (50 ns NVT)
@@ -508,7 +547,7 @@ Using the CapSACIN workflow with PPV (PDB: 1K3V), the authors demonstrated:
 
 If you use this repository in your research, please cite:
 
-> Jonathan W. P. Zajac, Idris Tohidian, Praveen Muralikrishnan, Caryn L. Heldt, Sarah L. Perry, Sapna Sarupria. "Cracking the Capsid Code: A Computationally Feasible Approach for Investigating Virus–Excipient Interactions in Biologics Design." *J. Chem. Theory Comput.* **2026**, 22, 2635–2651. doi: [10.1021/acs.jctc.5c01810](https://doi.org/10.1021/acs.jctc.5c01810)
+> Jonathan W. P. Zajac, Idris Tohidian, Praveen Muralikrishnan, Sarah L. Perry, Caryn L. Heldt, Sapna Sarupria. "Cracking the Capsid Code: A Computationally Feasible Approach for Investigating Virus–Excipient Interactions in Biologics Design." *J. Chem. Theory Comput.* **2026**, 22(5), 2635–2651. doi: [10.1021/acs.jctc.5c01810](https://doi.org/10.1021/acs.jctc.5c01810)
 
 ```bibtex
 @article{Zajac2026,
@@ -517,6 +556,7 @@ If you use this repository in your research, please cite:
   journal = {J. Chem. Theory Comput.},
   year = {2026},
   volume = {22},
+  number = {5},
   pages = {2635--2651},
   doi = {10.1021/acs.jctc.5c01810}
 }

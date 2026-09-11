@@ -4,7 +4,7 @@ set -euo pipefail
 #
 # Prerequisites:
 #   - Rust toolchain (rustc, cargo)
-#   - Node.js >= 18 + npm
+#   - Node.js >= 20.19 + npm (locked Sass dependency requirement)
 #   - Python 3.9+ with conda env "capSACIN"
 #   - PyInstaller installed in that environment
 
