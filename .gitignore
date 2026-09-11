@@ -27,6 +27,9 @@ systemSetup/dist/
 *.log
 docs/
 
+# Previous literature summary and notes
+literature-review-automated-symmetry-detection.md
+
 # Local release packages and scratch material
 releases/
 tmp/
