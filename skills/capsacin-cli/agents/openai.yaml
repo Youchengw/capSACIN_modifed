@@ -1,0 +1,4 @@
+interface:
+  display_name: "capSACIN CLI"
+  short_description: "Inspect capsid PDBs, select axes, and run slicing"
+  default_prompt: "Use $capsacin-cli to inspect my capsid PDB and run the requested symmetry-based slice."

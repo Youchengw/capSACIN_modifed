@@ -13,6 +13,7 @@ Operations:
   - inspect_structure   Read-only structural metadata
   - prepare_preview     Load, detect axis, align, generate aligned viewer mmCIF
   - run_slice           Full pipeline: prepare + slice + cleanup + write
+  - generate_restraints Three-region viewer and per-chain position restraints
   - cancel              Cancel a running operation
   - shutdown            Clean exit
 
@@ -36,6 +37,7 @@ from .handlers import (
     handle_prepare_preview,
     handle_prepare_all_previews,
     handle_run_slice,
+    handle_generate_restraints,
 )
 
 
@@ -178,8 +180,9 @@ class SidecarServer:
                 progress=lambda stage, frac, msg="": _emit_progress(req_id, stage, frac, msg),
                 cancel=cancel_event,
             )
-        elif operation == "run_slice":
-            return handle_run_slice(
+        elif operation in ("run_slice", "generate_restraints"):
+            handler = handle_run_slice if operation == "run_slice" else handle_generate_restraints
+            return handler(
                 params,
                 workspace_base=self._workspace_base,
                 progress=lambda stage, frac, msg="": _emit_progress(req_id, stage, frac, msg),

@@ -226,12 +226,47 @@ async fn prepare_preview(app: AppHandle, params: serde_json::Value) -> PendingRe
 async fn prepare_all_previews(app: AppHandle, params: serde_json::Value) -> PendingResult {
     let mut values = params.as_object().cloned().unwrap_or_default();
     values.remove("weight");
-    call_sidecar(&app, "prepare_all_previews", serde_json::Value::Object(values)).await
+    call_sidecar(
+        &app,
+        "prepare_all_previews",
+        serde_json::Value::Object(values),
+    )
+    .await
 }
 
 #[tauri::command]
 async fn run_slice(app: AppHandle, params: serde_json::Value) -> PendingResult {
     call_sidecar(&app, "run_slice", params).await
+}
+
+#[tauri::command]
+async fn generate_restraints(app: AppHandle, params: serde_json::Value) -> PendingResult {
+    call_sidecar(&app, "generate_restraints", params).await
+}
+
+#[tauri::command]
+async fn save_restraints_dialog(
+    app: AppHandle,
+    source_path: String,
+) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let source = Path::new(&source_path);
+    if source.extension().and_then(|value| value.to_str()) != Some("zip") {
+        return Err("Expected a restraints ZIP archive".to_string());
+    }
+    let path = app
+        .dialog()
+        .file()
+        .add_filter("Restraints ZIP", &["zip"])
+        .set_file_name(source.file_name().unwrap_or_default().to_string_lossy())
+        .blocking_save_file();
+    if let Some(destination) = path {
+        std::fs::copy(source, destination.to_string())
+            .map_err(|error| format!("Failed to save restraints: {error}"))?;
+        Ok(Some(destination.to_string()))
+    } else {
+        Ok(None)
+    }
 }
 
 #[tauri::command]
@@ -352,6 +387,8 @@ pub fn run() {
             prepare_preview,
             prepare_all_previews,
             run_slice,
+            generate_restraints,
+            save_restraints_dialog,
             cancel_operation,
             open_pdb_dialog,
             save_pdb_dialog,

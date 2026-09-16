@@ -9,6 +9,7 @@ import type {
   InspectResult, PreparePreviewResult, RunSliceResult,
   SidecarProgress, SidecarResult, SliceParams,
   PrepareAllPreviewsResult, SymmetryFold,
+  RestraintResult, RestraintSettings,
 } from "./types";
 
 // ---- Event listeners ----
@@ -39,6 +40,14 @@ export async function prepareAllPreviews(
 
 export async function runSlice(params: SliceParams): Promise<RunSliceResult> {
   return invoke<RunSliceResult>("run_slice", { params });
+}
+
+export async function generateRestraints(params: RestraintSettings & { input_path: string }): Promise<RestraintResult> {
+  return invoke<RestraintResult>("generate_restraints", { params });
+}
+
+export async function saveRestraintsDialog(sourcePath: string): Promise<string | null> {
+  return invoke<string | null>("save_restraints_dialog", { sourcePath });
 }
 
 export async function cancelOperation(): Promise<void> {

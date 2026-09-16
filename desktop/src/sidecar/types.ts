@@ -2,8 +2,8 @@
 
 export type SymmetryFold = 2 | 3 | 5;
 export type AxisMode = "auto" | "manual";
-export type DisplayMode = "original" | "sliced" | "overlay";
-export type OperationType = "inspect_structure" | "prepare_preview" | "prepare_all_previews" | "run_slice";
+export type DisplayMode = "original" | "sliced" | "overlay" | "restraints";
+export type OperationType = "inspect_structure" | "prepare_preview" | "prepare_all_previews" | "run_slice" | "generate_restraints";
 export type SidecarStatus = "idle" | "running" | "error" | "cancelled";
 
 // ---- Structure inspection ----
@@ -80,6 +80,22 @@ export interface RunSliceResult {
 }
 
 // ---- Sidecar protocol ----
+
+export interface RestraintSettings {
+  full_until: number;
+  free_from: number;
+  strength: number;
+}
+
+export interface RestraintResult {
+  input_path: string;
+  viewer_cif_path: string;
+  archive_path: string;
+  settings: RestraintSettings;
+  region_counts: Record<"full" | "transition" | "free", number>;
+  z_range: [number, number];
+  files: { chain_id: string; path: string; filename: string; atom_count: number; restrained_atoms: number }[];
+}
 
 export interface SidecarProgress {
   type: "progress";

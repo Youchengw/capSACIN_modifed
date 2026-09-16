@@ -5,10 +5,13 @@ import { DefaultPluginUISpec } from "molstar/lib/mol-plugin-ui/spec";
 import { MolScriptBuilder as MS } from "molstar/lib/mol-script/language/builder";
 import { Color } from "molstar/lib/mol-util/color";
 import type { PluginUIContext } from "molstar/lib/mol-plugin-ui/context";
+import { setSubtreeVisibility } from "molstar/lib/mol-plugin/behavior/static/state";
 
 import { useAppStore } from "../../store/useAppStore";
 import { readViewerFile } from "../../sidecar/client";
 import { resolveViewerRoi } from "../../utils/roi";
+import { RESTRAINT_REGIONS } from "../../utils/restraints";
+import { addRestraintPlanes } from "./RestraintPlanes";
 
 type Bounds = { min: [number, number, number]; max: [number, number, number] };
 
@@ -16,7 +19,7 @@ const COLORS = {
   retained: Color(0x55d6be),
   removed: Color(0x526071),
   sliced: Color(0x59a8ff),
-  roi: Color(0xff5d8f),
+  roi: Color(0xff2d2d),
   axis: Color(0xffcf56),
   plane: Color(0x6ee7f2),
 };
@@ -27,6 +30,8 @@ export function MolStarViewer() {
   const cacheRef = useRef(new Map<string, string>());
   const rebuildSerial = useRef(0);
   const rebuildQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const restraintPlanesRef = useRef<string | null>(null);
+  const roiRepresentationRef = useRef<string | null>(null);
   const [viewerReady, setViewerReady] = useState(false);
   const [viewerMessage, setViewerMessage] = useState("Initializing 3D viewer…");
 
@@ -35,10 +40,13 @@ export function MolStarViewer() {
   const inputPath = useAppStore((state) => state.inputPath);
   const preparing = useAppStore((state) => state.sidecarStatus) === "running";
   const sliceResult = useAppStore((state) => state.sliceResult);
-  const displayMode = useAppStore((state) => state.displayMode);
+  const requestedMode = useAppStore((state) => state.displayMode);
+  const restraintResult = useAppStore((state) => state.restraintResult);
+  const displayMode = requestedMode === "restraints" && !restraintResult ? "original" : requestedMode;
   const weight = useAppStore((state) => state.weight);
   const showAxis = useAppStore((state) => state.showAxis);
   const showPlane = useAppStore((state) => state.showPlane);
+  const showRestraintPlanes = useAppStore((state) => state.showRestraintPlanes);
   const showRoi = useAppStore((state) => state.showRoi);
   const roiFrame = useAppStore((state) => state.roiFrame);
   const roiChain = useAppStore((state) => state.roiChain);
@@ -54,6 +62,22 @@ export function MolStarViewer() {
   );
 
   useEffect(() => { cacheRef.current.clear(); }, [inputGeneration]);
+
+  useEffect(() => {
+    const plugin = pluginRef.current;
+    const ref = restraintPlanesRef.current;
+    if (plugin && ref && plugin.state.data.cells.has(ref)) {
+      setSubtreeVisibility(plugin.state.data, ref, !showRestraintPlanes);
+    }
+  }, [showRestraintPlanes]);
+
+  useEffect(() => {
+    const plugin = pluginRef.current;
+    const ref = roiRepresentationRef.current;
+    if (plugin && ref && plugin.state.data.cells.has(ref)) {
+      setSubtreeVisibility(plugin.state.data, ref, !showRoi);
+    }
+  }, [showRoi]);
 
   useEffect(() => {
     let disposed = false;
@@ -120,6 +144,8 @@ export function MolStarViewer() {
           if (!plugin || serial !== rebuildSerial.current) return;
           setViewerMessage("Rendering capsid…");
           try {
+            restraintPlanesRef.current = null;
+            roiRepresentationRef.current = null;
             await plugin.clear();
             if (!previewResult && !sliceResult) {
               setViewerMessage("");
@@ -127,6 +153,16 @@ export function MolStarViewer() {
             }
             let originalStructure: any = null;
             let slicedStructure: any = null;
+            if (displayMode === "restraints" && restraintResult) {
+              const text = await cachedViewerFile(restraintResult.viewer_cif_path, cacheRef.current);
+              const structure = await loadMmcif(plugin, text, "Restraint regions");
+              await addRestraintRepresentations(plugin, structure);
+              if (structure.obj) {
+                const ref = await addRestraintPlanes(plugin, structure.obj.data, restraintResult.settings);
+                restraintPlanesRef.current = ref;
+                setSubtreeVisibility(plugin.state.data, ref, !useAppStore.getState().showRestraintPlanes);
+              }
+            }
             const needsOriginal =
               displayMode === "original"
               || displayMode === "overlay"
@@ -164,18 +200,25 @@ export function MolStarViewer() {
               }
             }
 
+            if (displayMode === "restraints" && sliceResult?.sliced_cif_path) {
+              // The region CIF uses renamed scientific PDB chains. The sliced
+              // viewer CIF has identical coordinates and retains MODEL/chain
+              // identities, so ROI selection must use that structure.
+              const text = await cachedViewerFile(sliceResult.sliced_cif_path, cacheRef.current);
+              slicedStructure = await loadMmcif(plugin, text, "ROI selection");
+            }
+
             const roiStructure = displayMode === "original"
               ? originalStructure
               : (sliceResult ? slicedStructure : originalStructure);
             if (
-              showRoi
-              && roiStructure
+              roiStructure
               && resolvedRoi.chain
               && resolvedRoi.startResid > 0
               && resolvedRoi.endResid >= resolvedRoi.startResid
             ) {
               const roiFrames = getRoiFrames(previewResult?.diagnostics, roiFrame);
-              await addRoiRepresentation(
+              const representation = await addRoiRepresentation(
                 plugin,
                 roiStructure,
                 roiFrames.map((frame) => `M${frame}_${resolvedRoi.chain}`),
@@ -183,10 +226,14 @@ export function MolStarViewer() {
                 resolvedRoi.endResid,
                 displayMode !== "original" && !sliceResult ? weight : undefined,
               );
+              if (representation) {
+                roiRepresentationRef.current = representation.ref;
+                setSubtreeVisibility(plugin.state.data, representation.ref, !useAppStore.getState().showRoi);
+              }
             }
 
             const bounds = getBounds(previewResult?.diagnostics);
-            if (bounds && (showAxis || showPlane)) {
+            if (displayMode !== "restraints" && bounds && (showAxis || showPlane)) {
               const markerCif = buildMarkerCif(bounds, weight, showAxis, showPlane);
               const markerStructure = await loadMmcif(plugin, markerCif, "Guides");
               if (showAxis) await addAsymRepresentation(plugin, markerStructure, "AXIS", "axis", COLORS.axis, 0.95, 1.5);
@@ -212,11 +259,11 @@ export function MolStarViewer() {
     inputGeneration,
     previewResult,
     sliceResult,
+    restraintResult,
     displayMode,
     weight,
     showAxis,
     showPlane,
-    showRoi,
     roiFrame,
     roiChain,
     roiStartResid,
@@ -238,6 +285,24 @@ export function MolStarViewer() {
         </div>
       )}
       {viewerMessage && <div className="viewer-status">{viewerMessage}</div>}
+      {displayMode === "restraints" && restraintResult && (
+        <div className="restraint-legend">
+          <strong>Restraint regions</strong>
+          {RESTRAINT_REGIONS.map((region) => (
+            <span key={region.key}><i className="region-dot" style={{ background: region.color }} />
+              {region.label} · {restraintResult.region_counts[region.key].toLocaleString()} atoms
+            </span>
+          ))}
+          {showRestraintPlanes && (
+            <span>Boundary planes · z = {restraintResult.settings.full_until} / {restraintResult.settings.free_from} Å</span>
+          )}
+          {showRoi && (
+            <span><i className="region-dot" style={{ background: "#ff2d2d" }} />
+              ROI highlight · overrides region colors
+            </span>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -276,6 +341,26 @@ async function addAllRepresentation(
     colorParams: { value: color },
     typeParams: { alpha, pointSize: 2.2 },
   } as any);
+}
+
+async function addRestraintRepresentations(plugin: PluginUIContext, structure: any) {
+  for (const region of RESTRAINT_REGIONS) {
+    const expression = MS.struct.generator.atomGroups({
+      "atom-test": MS.core.rel.eq([
+        MS.struct.atomProperty.macromolecular.B_iso_or_equiv(), region.id,
+      ]),
+    });
+    const component = await plugin.builders.structure.tryCreateComponentFromExpression(
+      structure, expression, `restraint-${region.key}`, { label: region.label },
+    );
+    if (component) {
+      await plugin.builders.structure.representation.addRepresentation(component, {
+        type: "point", color: "uniform",
+        colorParams: { value: Color(Number.parseInt(region.color.slice(1), 16)) },
+        typeParams: { alpha: 1, pointSize: 2.8 },
+      } as any);
+    }
+  }
 }
 
 async function addWeightPreview(plugin: PluginUIContext, structure: any, weight: number) {
@@ -384,7 +469,7 @@ async function addRoiRepresentation(
     { label: `ROI ${asymIds.length}-fold copies:${startResid}-${endResid}` },
   );
   if (!component) return;
-  await plugin.builders.structure.representation.addRepresentation(component, {
+  return plugin.builders.structure.representation.addRepresentation(component, {
     type: "spacefill",
     color: "uniform",
     colorParams: { value: COLORS.roi },

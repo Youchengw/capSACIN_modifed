@@ -5,16 +5,21 @@ const MODES: { value: DisplayMode; label: string }[] = [
   { value: "original", label: "Original" },
   { value: "sliced", label: "Sliced" },
   { value: "overlay", label: "Overlay" },
+  { value: "restraints", label: "Restraints" },
 ];
 
 export function ViewerToolbar() {
-  const displayMode = useAppStore((s) => s.displayMode);
+  const requestedMode = useAppStore((s) => s.displayMode);
+  const restraintResult = useAppStore((s) => s.restraintResult);
+  const displayMode = requestedMode === "restraints" && !restraintResult ? "original" : requestedMode;
   const setDisplayMode = useAppStore((s) => s.setDisplayMode);
   const showAxis = useAppStore((s) => s.showAxis);
   const showPlane = useAppStore((s) => s.showPlane);
   const showRoi = useAppStore((s) => s.showRoi);
   const toggleAxis = useAppStore((s) => s.toggleAxis);
   const togglePlane = useAppStore((s) => s.togglePlane);
+  const showRestraintPlanes = useAppStore((s) => s.showRestraintPlanes);
+  const toggleRestraintPlanes = useAppStore((s) => s.toggleRestraintPlanes);
   const toggleRoi = useAppStore((s) => s.toggleRoi);
   const previewResult = useAppStore((s) => s.previewResult);
   const sliceResult = useAppStore((s) => s.sliceResult);
@@ -26,7 +31,7 @@ export function ViewerToolbar() {
   return (
     <div className="viewer-toolbar">
       {/* Display mode */}
-      {MODES.map((m) => (
+      {MODES.filter((m) => m.value !== "restraints" || restraintResult).map((m) => (
         <button
           key={m.value}
           className={displayMode === m.value ? "active" : ""}
@@ -44,13 +49,22 @@ export function ViewerToolbar() {
       <div style={{ width: "1px", background: "rgba(255,255,255,0.2)", margin: "0 4px" }} />
 
       {/* Toggles */}
+      {displayMode === "restraints" && (
+        <button className={showRestraintPlanes ? "active" : ""} onClick={toggleRestraintPlanes}
+          aria-pressed={showRestraintPlanes} title="Show translucent planes at the two restraint region boundaries">
+          Boundaries
+        </button>
+      )}
+      {displayMode !== "restraints" && <>
       <button className={showAxis ? "active" : ""} onClick={toggleAxis}>
         Axis
       </button>
       <button className={showPlane ? "active" : ""} onClick={togglePlane}>
         Plane
       </button>
-      <button className={showRoi ? "active" : ""} onClick={toggleRoi}>
+      </>}
+      <button className={showRoi ? "active" : ""} onClick={toggleRoi}
+        aria-pressed={showRoi} title="Highlight the ROI in red">
         ROI
       </button>
 

@@ -121,7 +121,8 @@ def write_aligned_mmcif(
     asym_ids = {}
     for i in range(n_atoms):
         atom_type = str(columns["atom"][i]).strip()
-        atom_id = str(columns["idx"][i]).strip()
+        # mmCIF supports unique IDs beyond the PDB five-digit serial limit.
+        atom_id = str(i + 1)
         atom_name = str(columns["name"][i]).strip()
         element = str(columns["type"][i]).strip() or atom_name[0]
         res_name = str(columns["resname"][i]).strip()
@@ -160,6 +161,7 @@ def write_sliced_mmcif(
     cleaned_chains: str | pd.DataFrame,
     output_path: str,
     orig_chains: list[str] | None = None,
+    atom_regions: np.ndarray | None = None,
 ) -> str:
     """Generate viewer mmCIF for the sliced (post-pipeline) result.
 
@@ -179,12 +181,14 @@ def write_sliced_mmcif(
         The output path.
     """
     if isinstance(cleaned_chains, str):
-        # Read the PDB using MDAnalysis
-        import MDAnalysis as md
-        u = md.Universe(cleaned_chains)
+        from capsacin.pdb_io import load_sliced_pdb
+        u = load_sliced_pdb(cleaned_chains)
         atoms = u.atoms
         n_atoms = len(atoms)
         positions = atoms.positions
+        # Viewer-only category labels; scientific PDB B factors stay untouched.
+        if atom_regions is not None and len(atom_regions) != n_atoms:
+            raise ValueError("Region labels must match the sliced PDB atom count.")
 
         lines = [
             "data_CAPSACIN_SLICED",
@@ -219,7 +223,7 @@ def write_sliced_mmcif(
                 f"ATOM {i + 1} {atom.element or atom.name[0]} {atom.name} {atom.resname} "
                 f"{asym_id} 1 {atom.resid} {atom.name} {atom.resname} {asym_id} {atom.resid} "
                 f"{positions[i, 0]:.3f} {positions[i, 1]:.3f} {positions[i, 2]:.3f} "
-                f"1.00 0.00"
+                f"1.00 {int(atom_regions[i]) if atom_regions is not None else 0}"
             )
     else:
         # DataFrame path
@@ -266,7 +270,7 @@ def write_sliced_mmcif(
                 ),
             )
             lines.append(
-                f"{str(df.atom.values[i]).strip()} {str(df.idx.values[i]).strip()} "
+                f"{str(df.atom.values[i]).strip()} {i + 1} "
                 f"{str(df.type.values[i]).strip()} {str(df.name.values[i]).strip()} "
                 f"{str(df.resname.values[i]).strip()} {asym_id} "
                 f"1 {str(df.resids.values[i]).strip()} {str(df.name.values[i]).strip()} "

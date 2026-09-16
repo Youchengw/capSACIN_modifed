@@ -418,6 +418,66 @@ def handle_run_slice(
 # ---------------------------------------------------------------------------
 
 
+def handle_generate_restraints(params: dict, workspace_base=None, progress=None, cancel=None):
+    """Build the viewer and downloadable files from the same final PDB atoms."""
+    from zipfile import ZipFile, ZIP_DEFLATED
+    from capsacin.restraints import generate_restraint_files, REGION_NAMES
+    from capsacin.protocol import PipelineCancelledError
+
+    def check_cancelled():
+        if cancel is not None and cancel.is_set():
+            raise PipelineCancelledError()
+
+    check_cancelled()
+    source = Path(params["input_path"])
+    settings = {key: float(params.get(key, default)) for key, default in
+                (("full_until", 15.0), ("free_from", 30.0), ("strength", 1.0))}
+    workspace = _get_workspace(workspace_base, "restraints")
+    if progress:
+        progress("restraints", 0.0, "Calculating restraint regions…")
+    result = generate_restraint_files(source, workspace, **settings,
+                                     check_cancelled=check_cancelled)
+    check_cancelled()
+    viewer_path = str(workspace / "restraint_regions.cif")
+    write_sliced_mmcif(str(source), viewer_path, atom_regions=result["regions"])
+    if progress:
+        progress("restraints", 0.8, "Packaging chain restraints…")
+    readme = workspace / "README.txt"
+    readme.write_text(
+        f"capSACIN position restraints\nSource sliced PDB: {source.name}\n\n"
+        f"Full: z < {settings['full_until']:g} Å\n"
+        f"Transition: {settings['full_until']:g} ≤ z < {settings['free_from']:g} Å\n"
+        f"Free: z ≥ {settings['free_from']:g} Å (omitted from ITP)\n"
+        f"Strength scale: {settings['strength']:g}\n"
+        f"Full fx = fy = fz: {1000 * settings['strength']:g} kJ mol^-1 nm^-2\n\n"
+        "Heights use the final sliced PDB coordinates rounded to 0.001 Å.\n"
+        "Transition: t = 2*(z-zmin)/(zmax-zmin)-1, s = 1-1/(1+exp(-t/0.1));\n"
+        "zmin/zmax are observed across all transition atoms, not boundary settings.\n"
+        "fx = fy = fz = round(1000*strength*s, 3).\n\n"
+        "Atom indices are 1-based within each chain in the source PDB order.\n"
+        "Use each ITP with its matching GROMACS molecule topology. If topology\n"
+        "preparation adds, deletes or reorders atoms, remap indices before use.\n"
+        "Chains with no restrained atoms have a header-only ITP.\n\n"
+        + "\n".join(f"Chain {f['chain_id']}: {f['filename']} "
+                    f"({f['restrained_atoms']}/{f['atom_count']} atoms restrained)"
+                    for f in result["files"]) + "\n", encoding="utf-8",
+    )
+    archive_path = workspace / f"{source.stem}-restraints.zip"
+    with ZipFile(archive_path, "w", ZIP_DEFLATED) as archive:
+        for path in [readme, *(Path(f["path"]) for f in result["files"])]:
+            check_cancelled()
+            archive.write(path, path.name)
+    check_cancelled()
+    counts = {name: int(np.count_nonzero(result["regions"] == i))
+              for i, name in enumerate(REGION_NAMES, 1)}
+    if progress:
+        progress("restraints", 1.0, "Restraints ready")
+    return {"input_path": str(source), "viewer_cif_path": viewer_path,
+            "archive_path": str(archive_path), "settings": settings,
+            "region_counts": counts, "files": result["files"],
+            "z_range": [round(float(result["z"].min()), 3), round(float(result["z"].max()), 3)]}
+
+
 def _get_workspace(base: Path | None, prefix: str) -> Path:
     """Create a unique workspace directory."""
     if base is None:

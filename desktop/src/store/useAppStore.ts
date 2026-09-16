@@ -4,6 +4,7 @@ import type {
   InspectResult, PreparePreviewResult, RunSliceResult,
   AxisCandidate, SliceStatistics,
   PrepareAllPreviewsResult,
+  RestraintResult, RestraintSettings,
 } from "../sidecar/types";
 
 // ---- Built-in PDB list ----
@@ -52,11 +53,14 @@ export interface AppState {
   foldPreviews: Partial<Record<SymmetryFold, PreparePreviewResult>>;
   foldErrors: Partial<Record<SymmetryFold, string>>;
   sliceResult: RunSliceResult | null;
+  restraintResult: RestraintResult | null;
+  restraintSettings: RestraintSettings;
 
   // Viewer
   displayMode: DisplayMode;
   showAxis: boolean;
   showPlane: boolean;
+  showRestraintPlanes: boolean;
   showRoi: boolean;
 
   // Actions
@@ -81,9 +85,12 @@ export interface AppState {
   setPreviewResult: (r: PreparePreviewResult) => void;
   setAllPreviews: (r: PrepareAllPreviewsResult) => void;
   setSliceResult: (r: RunSliceResult) => void;
+  setRestraintResult: (r: RestraintResult | null) => void;
+  setRestraintSettings: (settings: Partial<RestraintSettings>) => void;
   setDisplayMode: (m: DisplayMode) => void;
   toggleAxis: () => void;
   togglePlane: () => void;
+  toggleRestraintPlanes: () => void;
   toggleRoi: () => void;
   reset: () => void;
 }
@@ -116,14 +123,17 @@ const initialState = {
   foldPreviews: {} as AppState["foldPreviews"],
   foldErrors: {} as AppState["foldErrors"],
   sliceResult: null as RunSliceResult | null,
+  restraintResult: null as RestraintResult | null,
+  restraintSettings: { full_until: 15, free_from: 30, strength: 1 },
   displayMode: "original" as DisplayMode,
   showAxis: true,
   showPlane: true,
+  showRestraintPlanes: true,
   showRoi: false,
 };
 
 const clearedPreviews = {
-  previewResult: null, sliceResult: null, foldPreviews: {}, foldErrors: {}, error: null,
+  previewResult: null, sliceResult: null, restraintResult: null, foldPreviews: {}, foldErrors: {}, error: null,
 };
 const resetAxes = { axisIndex: 0, axisIndices: { 2: 0, 3: 0, 5: 0 } };
 
@@ -152,22 +162,22 @@ export const useAppStore = create<AppState>((set) => ({
       refIndices: "",
       inspectResult: null,
       previewResult: null,
-      sliceResult: null,
+      sliceResult: null, restraintResult: null,
     })),
 
   setSymmetry: (symmetry) => set((state) => symmetry === state.symmetry ? {} : ({
     symmetry,
     axisIndex: state.axisIndices[symmetry],
     previewResult: state.foldPreviews[symmetry] ?? null,
-    sliceResult: null,
+    sliceResult: null, restraintResult: null,
     error: state.foldErrors[symmetry] ?? null,
   })),
-  setWeight: (weight) => set({ weight, sliceResult: null }),
+  setWeight: (weight) => set({ weight, sliceResult: null, restraintResult: null }),
   setAxisMode: (axisMode) => set({ axisMode, ...clearedPreviews }),
   setAxisIndex: (axisIndex) => set((state) => ({
     axisIndex,
     axisIndices: { ...state.axisIndices, [state.symmetry]: axisIndex },
-    previewResult: null, sliceResult: null, error: null,
+    previewResult: null, sliceResult: null, restraintResult: null, error: null,
     foldPreviews: { ...state.foldPreviews, [state.symmetry]: undefined },
     foldErrors: { ...state.foldErrors, [state.symmetry]: undefined },
   })),
@@ -204,7 +214,7 @@ export const useAppStore = create<AppState>((set) => ({
     };
   }),
   setPreviewResult: (previewResult) => set((state) => ({
-    previewResult, sliceResult: null, displayMode: "original",
+    previewResult, sliceResult: null, restraintResult: null, displayMode: "original",
     foldPreviews: { ...state.foldPreviews, [state.symmetry]: previewResult },
     foldErrors: { ...state.foldErrors, [state.symmetry]: undefined },
   })),
@@ -212,14 +222,24 @@ export const useAppStore = create<AppState>((set) => ({
     foldPreviews: result.previews,
     foldErrors: result.errors,
     previewResult: result.previews[state.symmetry] ?? null,
-    sliceResult: null,
+    sliceResult: null, restraintResult: null,
     error: result.errors[state.symmetry] ?? null,
     displayMode: "original",
   })),
-  setSliceResult: (sliceResult) => set({ sliceResult }),
+  setSliceResult: (sliceResult) => set({ sliceResult, restraintResult: null, displayMode: "sliced" }),
+  setRestraintResult: (restraintResult) => set((s) => ({
+    restraintResult,
+    displayMode: restraintResult ? "restraints" : s.displayMode === "restraints" ? "sliced" : s.displayMode,
+  })),
+  setRestraintSettings: (settings) => set((s) => ({
+    restraintSettings: { ...s.restraintSettings, ...settings },
+    restraintResult: null,
+    displayMode: s.displayMode === "restraints" ? "sliced" : s.displayMode,
+  })),
   setDisplayMode: (displayMode) => set({ displayMode }),
   toggleAxis: () => set((s) => ({ showAxis: !s.showAxis })),
   togglePlane: () => set((s) => ({ showPlane: !s.showPlane })),
+  toggleRestraintPlanes: () => set((s) => ({ showRestraintPlanes: !s.showRestraintPlanes })),
   toggleRoi: () => set((s) => ({ showRoi: !s.showRoi })),
   reset: () => set(initialState),
 }));

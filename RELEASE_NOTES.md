@@ -1,4 +1,4 @@
-# capSACIN Studio v0.1.2
+# capSACIN Studio v0.1.3
 
 Opening a PDB now automatically prepares the 2-fold, 3-fold, and 5-fold previews. Switching between prepared folds reuses their results and updates the 3D view without running Prepare again.
 
@@ -14,6 +14,10 @@ Opening a PDB now automatically prepares the 2-fold, 3-fold, and 5-fold previews
 - Fix the packaged engine entry point so multiprocessing helper processes do not start duplicate preview servers.
 - Give only the Python engine the library-loading entitlement needed for its bundled libraries, retaining Hardened Runtime on both the engine and app. Exercise the signed engine during release builds.
 - Explicitly select the existing 13 bundled PDBs, keeping additional local structures out of installers.
+- Add three-region position-restraint generation after slicing, with editable boundaries and independent strength scaling.
+- Visualize full, transition, and free restraint regions with translucent boundary planes, while preserving ROI highlighting in red.
+- Export one GROMACS position-restraint `.itp` file per chain together with settings, indexing notes, and region counts.
+- Keep viewer mmCIF atom identifiers unique and support reading older slices whose PDB serial numbers exceeded 99,999.
 
 ## Validation
 
@@ -30,8 +34,8 @@ The engine's first startup remains slow in the tested packaged build (about 34 s
 
 ## Downloads and requirements
 
-- `capSACIN-Studio-v0.1.2-macOS-arm64.dmg` — recommended installer.
-- `capSACIN-Studio-v0.1.2-macOS-arm64.zip` — zipped application bundle.
+- `capSACIN-Studio-v0.1.3-macOS-arm64.dmg` — recommended installer.
+- `capSACIN-Studio-v0.1.3-macOS-arm64.zip` — zipped application bundle.
 - `SHA256SUMS.txt` — checksums, continuing the existing release format.
 
 Requires an Apple Silicon Mac and macOS 13 or later. Python and the 13 example structures are bundled; a separate Conda environment is not required.
