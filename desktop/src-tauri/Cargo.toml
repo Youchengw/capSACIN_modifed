@@ -22,7 +22,9 @@ serde_json = "1"
 tokio = { version = "1", features = ["process", "io-std", "io-util", "sync", "macros", "rt-multi-thread"] }
 
 [profile.release]
-strip = true
+# Rust stripping corrupts host proc-macro dylibs with current macOS/Rust
+# (dyld reports a mis-aligned LINKEDIT string pool during clean release builds).
+strip = false
 lto = true
 codegen-units = 1
 panic = "abort"

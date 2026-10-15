@@ -258,6 +258,12 @@ select:focus, input:focus {
 .chain-z small { display: block; color: var(--text-secondary); font-size: 9px; }
 .weight-badge { display: inline-flex; justify-content: center; align-items: center; width: 18px; height: 18px; border-radius: 9px; background: rgba(234, 179, 8, 0.2); color: #fde047; font-weight: 700; }
 .chain-selection-panel > .btn { width: 100%; margin-top: 8px; }
+.roi-chain-selection { margin: 12px 0 10px; padding-top: 10px; border-top: 1px solid var(--panel-border); }
+.roi-chain-selection h4 { margin: 0 0 4px; font-size: 12px; color: var(--text-primary); }
+.roi-chain-actions { display: flex; justify-content: flex-end; gap: 8px; margin: -2px 0 7px; }
+.roi-chain-list { max-height: 220px; }
+.roi-chain-list .chain-row { grid-template-columns: 18px minmax(54px, 1fr) minmax(108px, auto) 28px; }
+.roi-default-badge { color: #fca5a5; font-size: 8px; font-weight: 700; letter-spacing: 0.04em; text-align: center; }
 
 .viewer-toolbar button {
   padding: 6px 10px;

@@ -4,6 +4,7 @@
 - Sort complete aligned chains by mean or minimum z and show each chain's z range.
 - Allow chains outside the weight cut to be added and retained chains to be removed.
 - Regenerate the final PDB and 3D preview from the selected chains before restraint generation.
+- Select any retained chains as the red ROI overlay during restraint review, while preserving the z-based restraint calculation.
 
 # capSACIN Studio v0.1.3
 

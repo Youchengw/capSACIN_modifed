@@ -6,6 +6,7 @@ import type {
   PrepareAllPreviewsResult,
   RestraintResult, RestraintSettings,
 } from "../sidecar/types";
+import { defaultRoiChainIndices, resolveRoiFrames } from "../utils/roi.ts";
 
 // ---- Built-in PDB list ----
 
@@ -56,6 +57,7 @@ export interface AppState {
   restraintResult: RestraintResult | null;
   restraintSettings: RestraintSettings;
   selectedChainIndices: number[];
+  roiChainIndices: number[];
 
   // Viewer
   displayMode: DisplayMode;
@@ -88,6 +90,8 @@ export interface AppState {
   setSliceResult: (r: RunSliceResult) => void;
   setChainSelected: (sourceIndex: number, selected: boolean) => void;
   setSelectedChainIndices: (indices: number[]) => void;
+  setRoiChainSelected: (sourceIndex: number, selected: boolean) => void;
+  setRoiChainIndices: (indices: number[]) => void;
   setRestraintResult: (r: RestraintResult | null) => void;
   setRestraintSettings: (settings: Partial<RestraintSettings>) => void;
   setDisplayMode: (m: DisplayMode) => void;
@@ -129,6 +133,7 @@ const initialState = {
   restraintResult: null as RestraintResult | null,
   restraintSettings: { full_until: 15, free_from: 30, strength: 1 },
   selectedChainIndices: [] as number[],
+  roiChainIndices: [] as number[],
   displayMode: "original" as DisplayMode,
   showAxis: true,
   showPlane: true,
@@ -137,7 +142,7 @@ const initialState = {
 };
 
 const clearedPreviews = {
-  previewResult: null, sliceResult: null, restraintResult: null, selectedChainIndices: [], foldPreviews: {}, foldErrors: {}, error: null,
+  previewResult: null, sliceResult: null, restraintResult: null, selectedChainIndices: [], roiChainIndices: [], foldPreviews: {}, foldErrors: {}, error: null,
 };
 const resetAxes = { axisIndex: 0, axisIndices: { 2: 0, 3: 0, 5: 0 } };
 
@@ -166,22 +171,22 @@ export const useAppStore = create<AppState>((set) => ({
       refIndices: "",
       inspectResult: null,
       previewResult: null,
-      sliceResult: null, restraintResult: null, selectedChainIndices: [],
+      sliceResult: null, restraintResult: null, selectedChainIndices: [], roiChainIndices: [],
     })),
 
   setSymmetry: (symmetry) => set((state) => symmetry === state.symmetry ? {} : ({
     symmetry,
     axisIndex: state.axisIndices[symmetry],
     previewResult: state.foldPreviews[symmetry] ?? null,
-    sliceResult: null, restraintResult: null, selectedChainIndices: [],
+    sliceResult: null, restraintResult: null, selectedChainIndices: [], roiChainIndices: [],
     error: state.foldErrors[symmetry] ?? null,
   })),
-  setWeight: (weight) => set({ weight, sliceResult: null, restraintResult: null, selectedChainIndices: [] }),
+  setWeight: (weight) => set({ weight, sliceResult: null, restraintResult: null, selectedChainIndices: [], roiChainIndices: [] }),
   setAxisMode: (axisMode) => set({ axisMode, ...clearedPreviews }),
   setAxisIndex: (axisIndex) => set((state) => ({
     axisIndex,
     axisIndices: { ...state.axisIndices, [state.symmetry]: axisIndex },
-    previewResult: null, sliceResult: null, restraintResult: null, selectedChainIndices: [], error: null,
+    previewResult: null, sliceResult: null, restraintResult: null, selectedChainIndices: [], roiChainIndices: [], error: null,
     foldPreviews: { ...state.foldPreviews, [state.symmetry]: undefined },
     foldErrors: { ...state.foldErrors, [state.symmetry]: undefined },
   })),
@@ -218,7 +223,7 @@ export const useAppStore = create<AppState>((set) => ({
     };
   }),
   setPreviewResult: (previewResult) => set((state) => ({
-    previewResult, sliceResult: null, restraintResult: null, selectedChainIndices: [], displayMode: "original",
+    previewResult, sliceResult: null, restraintResult: null, selectedChainIndices: [], roiChainIndices: [], displayMode: "original",
     foldPreviews: { ...state.foldPreviews, [state.symmetry]: previewResult },
     foldErrors: { ...state.foldErrors, [state.symmetry]: undefined },
   })),
@@ -226,17 +231,33 @@ export const useAppStore = create<AppState>((set) => ({
     foldPreviews: result.previews,
     foldErrors: result.errors,
     previewResult: result.previews[state.symmetry] ?? null,
-    sliceResult: null, restraintResult: null, selectedChainIndices: [],
+    sliceResult: null, restraintResult: null, selectedChainIndices: [], roiChainIndices: [],
     error: result.errors[state.symmetry] ?? null,
     displayMode: "original",
   })),
-  setSliceResult: (sliceResult) => set({
-    sliceResult,
-    selectedChainIndices: (sliceResult.chain_candidates ?? [])
+  setSliceResult: (sliceResult) => set((state) => {
+    const appliedIndices = (sliceResult.chain_candidates ?? [])
       .filter((chain) => chain.selected)
-      .map((chain) => chain.source_index),
-    restraintResult: null,
-    displayMode: "sliced",
+      .map((chain) => chain.source_index);
+    const appliedSet = new Set(appliedIndices);
+    const sameAlignedSource = Boolean(
+      state.sliceResult?.chain_source_path
+      && state.sliceResult.chain_source_path === sliceResult.chain_source_path,
+    );
+    const roiChainIndices = sameAlignedSource
+      ? state.roiChainIndices.filter((index) => appliedSet.has(index))
+      : defaultRoiChainIndices(
+        sliceResult,
+        resolveRoiFrames(state.previewResult?.diagnostics, state.roiFrame),
+        state.roiChain,
+      );
+    return {
+      sliceResult,
+      selectedChainIndices: appliedIndices,
+      roiChainIndices,
+      restraintResult: null,
+      displayMode: "sliced",
+    };
   }),
   setChainSelected: (sourceIndex, selected) => set((state) => ({
     selectedChainIndices: selected
@@ -250,9 +271,20 @@ export const useAppStore = create<AppState>((set) => ({
     restraintResult: null,
     displayMode: state.displayMode === "restraints" ? "sliced" : state.displayMode,
   })),
+  setRoiChainSelected: (sourceIndex, selected) => set((state) => {
+    const roiChainIndices = selected
+      ? Array.from(new Set([...state.roiChainIndices, sourceIndex]))
+      : state.roiChainIndices.filter((value) => value !== sourceIndex);
+    return { roiChainIndices, showRoi: roiChainIndices.length > 0 };
+  }),
+  setRoiChainIndices: (indices) => set(() => {
+    const roiChainIndices = Array.from(new Set(indices));
+    return { roiChainIndices, showRoi: roiChainIndices.length > 0 };
+  }),
   setRestraintResult: (restraintResult) => set((s) => ({
     restraintResult,
     displayMode: restraintResult ? "restraints" : s.displayMode === "restraints" ? "sliced" : s.displayMode,
+    showRoi: restraintResult && s.roiChainIndices.length > 0 ? true : s.showRoi,
   })),
   setRestraintSettings: (settings) => set((s) => ({
     restraintSettings: { ...s.restraintSettings, ...settings },

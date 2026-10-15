@@ -9,7 +9,7 @@ import { setSubtreeVisibility } from "molstar/lib/mol-plugin/behavior/static/sta
 
 import { useAppStore } from "../../store/useAppStore";
 import { readViewerFile } from "../../sidecar/client";
-import { resolveViewerRoi } from "../../utils/roi";
+import { resolveRoiFrames, resolveViewerRoi, selectedRoiChainIds } from "../../utils/roi";
 import { RESTRAINT_REGIONS } from "../../utils/restraints";
 import { addRestraintPlanes } from "./RestraintPlanes";
 
@@ -52,6 +52,7 @@ export function MolStarViewer() {
   const roiChain = useAppStore((state) => state.roiChain);
   const roiStartResid = useAppStore((state) => state.roiStartResid);
   const roiEndResid = useAppStore((state) => state.roiEndResid);
+  const roiChainIndices = useAppStore((state) => state.roiChainIndices);
   const inspectResult = useAppStore((state) => state.inspectResult);
   const setError = useAppStore((state) => state.setError);
   const resolvedRoi = resolveViewerRoi(
@@ -217,18 +218,23 @@ export function MolStarViewer() {
               && resolvedRoi.startResid > 0
               && resolvedRoi.endResid >= resolvedRoi.startResid
             ) {
-              const roiFrames = getRoiFrames(previewResult?.diagnostics, roiFrame);
-              const representation = await addRoiRepresentation(
-                plugin,
-                roiStructure,
-                roiFrames.map((frame) => `M${frame}_${resolvedRoi.chain}`),
-                resolvedRoi.startResid,
-                resolvedRoi.endResid,
-                displayMode !== "original" && !sliceResult ? weight : undefined,
-              );
-              if (representation) {
-                roiRepresentationRef.current = representation.ref;
-                setSubtreeVisibility(plugin.state.data, representation.ref, !useAppStore.getState().showRoi);
+              const roiAsymIds = sliceResult
+                ? selectedRoiChainIds(sliceResult, roiChainIndices)
+                : resolveRoiFrames(previewResult?.diagnostics, roiFrame)
+                  .map((frame) => `M${frame}_${resolvedRoi.chain}`);
+              if (roiAsymIds.length > 0) {
+                const representation = await addRoiRepresentation(
+                  plugin,
+                  roiStructure,
+                  roiAsymIds,
+                  resolvedRoi.startResid,
+                  resolvedRoi.endResid,
+                  displayMode !== "original" && !sliceResult ? weight : undefined,
+                );
+                if (representation) {
+                  roiRepresentationRef.current = representation.ref;
+                  setSubtreeVisibility(plugin.state.data, representation.ref, !useAppStore.getState().showRoi);
+                }
               }
             }
 
@@ -268,6 +274,7 @@ export function MolStarViewer() {
     roiChain,
     roiStartResid,
     roiEndResid,
+    roiChainIndices,
     inspectResult,
     setError,
   ]);
@@ -298,7 +305,7 @@ export function MolStarViewer() {
           )}
           {showRoi && (
             <span><i className="region-dot" style={{ background: "#ff2d2d" }} />
-              ROI highlight · overrides region colors
+              ROI highlight · {roiChainIndices.length} selected chains · overrides region colors
             </span>
           )}
         </div>
@@ -475,18 +482,6 @@ async function addRoiRepresentation(
     colorParams: { value: COLORS.roi },
     typeParams: { alpha: 1, sizeFactor: 0.55 },
   } as any);
-}
-
-function getRoiFrames(
-  diagnostics: Record<string, unknown> | undefined,
-  fallbackFrame: number,
-): number[] {
-  const frames = diagnostics?.roi_symmetry_frames;
-  if (!Array.isArray(frames)) return [fallbackFrame];
-  const valid = frames.filter(
-    (frame): frame is number => Number.isInteger(frame) && frame >= 0,
-  );
-  return valid.length > 0 ? valid : [fallbackFrame];
 }
 
 async function addAsymRepresentation(

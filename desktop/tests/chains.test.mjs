@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { useAppStore } from "../src/store/useAppStore.ts";
 import { applyChainSelection } from "../src/sidecar/applyChainSelection.ts";
 import { chainSelectionDirty, weightChainIndices } from "../src/utils/chains.ts";
+import { defaultRoiChainIndices, resolveRoiFrames, selectedRoiChainIds } from "../src/utils/roi.ts";
 
 const state = () => useAppStore.getState();
 const candidate = (source_index, z_mean, selected) => ({
@@ -48,4 +49,26 @@ test("applying selection replaces the exported model and preserves weight marker
   assert.deepEqual(state().selectedChainIndices, [0]);
   assert.equal(state().sliceResult.statistics.output_chains, 1);
   assert.equal(chainSelectionDirty(state().sliceResult, state().selectedChainIndices), false);
+});
+
+test("ROI chains default to symmetry copies and can be expanded independently", () => {
+  const result = slice([0, 1]);
+  result.chain_candidates.push(candidate(2, 30, true));
+  state().setPreviewResult({ diagnostics: { roi_symmetry_frames: [0, 2] } });
+  state().setSliceResult(result);
+  assert.deepEqual(state().roiChainIndices, [0, 2]);
+  assert.deepEqual(
+    defaultRoiChainIndices(result, resolveRoiFrames({ roi_symmetry_frames: [0, 2] }, 1), "X"),
+    [0, 2],
+  );
+
+  state().setRestraintResult({ archive_path: "/tmp/restraints.zip" });
+  state().setRoiChainIndices([0, 1, 2]);
+  assert.deepEqual(state().roiChainIndices, [0, 1, 2]);
+  assert.deepEqual(selectedRoiChainIds(result, state().roiChainIndices), ["M2_X", "M1_X", "M0_X"]);
+  assert.ok(state().restraintResult, "display-only ROI edits keep generated restraints");
+  assert.equal(state().showRoi, true);
+
+  state().setRoiChainIndices([]);
+  assert.equal(state().showRoi, false);
 });

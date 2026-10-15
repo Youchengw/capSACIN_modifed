@@ -41,6 +41,10 @@ detection or alignment. Restraint generation then uses that edited PDB.
 ### Restraint regions
 
 After slicing, open **Restraint generation** and click **Generate & preview restraints**.
+The **ROI chains** list defaults to the local n-fold copies and can be changed to
+any retained-chain combination, such as 2, 4, or 6 chains for a 2-fold surface.
+This selection controls the red ROI overlay; restraint strengths remain defined
+by the three z regions.
 The **Restraints** view colors atoms in three regions using the final sliced PDB:
 
 - **Full restraint** (pink): z < 15 Å.

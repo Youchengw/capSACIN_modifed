@@ -3,6 +3,7 @@ import { useAppStore } from "../../store/useAppStore";
 import { generateRestraints } from "../../sidecar/generateRestraints";
 import { RESTRAINT_REGIONS } from "../../utils/restraints";
 import { chainSelectionDirty } from "../../utils/chains";
+import { RoiChainSelection } from "./RoiChainSelection";
 
 export function RestraintPanel() {
   const slice = useAppStore((s) => s.sliceResult);
@@ -59,6 +60,7 @@ export function RestraintPanel() {
           </div>
         ))}
       </div>
+      <RoiChainSelection />
       {!valid && <p className="restraint-note" role="alert">Use 0 ≤ full boundary &lt; free boundary and a nonnegative strength.</p>}
       {chainEditsPending && <p className="restraint-note" role="alert">Apply the pending chain selection before generating restraints.</p>}
       {slice.statistics.output_atoms === 0 && <p className="restraint-note">The slice is empty. Adjust the slice settings first.</p>}
