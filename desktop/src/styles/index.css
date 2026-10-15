@@ -235,6 +235,30 @@ select:focus, input:focus {
   padding: 12px 16px; border-radius: 8px; background: rgba(7, 16, 25, 0.9); font-size: 12px; color: #f1f5f9; pointer-events: none; }
 .restraint-legend span { display: flex; align-items: center; gap: 8px; }
 
+/* Post-slice chain editor */
+.chain-selection-panel { font-size: 12px; }
+.chain-note { color: var(--text-secondary); font-size: 11px; line-height: 1.45; margin: 6px 0; }
+.chain-error { color: #fca5a5; }
+.chain-selection-summary { display: flex; align-items: baseline; gap: 5px; margin: 10px 0 8px; color: var(--text-primary); }
+.chain-selection-summary strong { font-size: 18px; color: var(--accent); }
+.chain-selection-summary span { margin-left: auto; color: var(--gold); font-size: 10px; }
+.chain-selection-controls { display: grid; grid-template-columns: 1fr auto; align-items: end; gap: 8px; margin-bottom: 8px; }
+.chain-selection-controls label { color: var(--text-secondary); font-size: 11px; }
+.chain-selection-controls select { margin-top: 3px; padding: 5px 8px; }
+.chain-selection-controls > div { display: flex; gap: 6px; padding-bottom: 5px; }
+.chain-link { border: 0; padding: 0; background: transparent; color: #93c5fd; font-size: 10px; cursor: pointer; }
+.chain-link:disabled { opacity: 0.5; cursor: not-allowed; }
+.chain-list { max-height: 270px; overflow-y: auto; border: 1px solid var(--panel-border); border-radius: 6px; background: #0f172a; }
+.chain-row { display: grid; grid-template-columns: 18px minmax(54px, 1fr) minmax(108px, auto) 20px; align-items: center; gap: 6px; padding: 6px 8px; border-bottom: 1px solid rgba(51, 65, 85, 0.65); cursor: pointer; color: var(--text-secondary); }
+.chain-row:last-child { border-bottom: 0; }
+.chain-row.selected { background: rgba(59, 130, 246, 0.12); color: var(--text-primary); }
+.chain-row input { accent-color: var(--accent); }
+.chain-id { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; overflow: hidden; text-overflow: ellipsis; }
+.chain-z { text-align: right; font-variant-numeric: tabular-nums; }
+.chain-z small { display: block; color: var(--text-secondary); font-size: 9px; }
+.weight-badge { display: inline-flex; justify-content: center; align-items: center; width: 18px; height: 18px; border-radius: 9px; background: rgba(234, 179, 8, 0.2); color: #fde047; font-weight: 700; }
+.chain-selection-panel > .btn { width: 100%; margin-top: 8px; }
+
 .viewer-toolbar button {
   padding: 6px 10px;
   font-size: 12px;

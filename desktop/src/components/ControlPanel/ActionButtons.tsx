@@ -1,6 +1,7 @@
 import { useAppStore } from "../../store/useAppStore";
 import { buildSliceParams } from "../../utils/sliceParams";
 import { preparePreviews } from "../../sidecar/preparePreviews";
+import { chainSelectionDirty } from "../../utils/chains";
 
 export function ActionButtons() {
   const inputPath = useAppStore((s) => s.inputPath);
@@ -12,10 +13,12 @@ export function ActionButtons() {
   const setProgress = useAppStore((s) => s.setProgress);
   const setError = useAppStore((s) => s.setError);
   const setSliceResult = useAppStore((s) => s.setSliceResult);
+  const selectedChainIndices = useAppStore((s) => s.selectedChainIndices);
 
   const busy = sidecarStatus === "running";
   const hasStructure = !!inputPath;
   const hasPreview = !!previewResult;
+  const chainEditsPending = chainSelectionDirty(sliceResult, selectedChainIndices);
 
   const handleOperationError = (error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
@@ -105,7 +108,9 @@ export function ActionButtons() {
         {!busy && sliceResult && (
           <button
             className="btn btn-outline"
+            disabled={chainEditsPending}
             onClick={handleSave}
+            title={chainEditsPending ? "Apply the pending chain selection before saving" : "Save the final surface-model PDB"}
             style={{ flex: 1 }}
           >
             Save PDB As…

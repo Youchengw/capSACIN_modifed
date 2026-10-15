@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useAppStore } from "../../store/useAppStore";
 import { generateRestraints } from "../../sidecar/generateRestraints";
 import { RESTRAINT_REGIONS } from "../../utils/restraints";
+import { chainSelectionDirty } from "../../utils/chains";
 
 export function RestraintPanel() {
   const slice = useAppStore((s) => s.sliceResult);
@@ -9,10 +10,12 @@ export function RestraintPanel() {
   const settings = useAppStore((s) => s.restraintSettings);
   const setSettings = useAppStore((s) => s.setRestraintSettings);
   const busy = useAppStore((s) => s.sidecarStatus) === "running";
+  const selectedChains = useAppStore((s) => s.selectedChainIndices);
   const [saved, setSaved] = useState<{ archive: string; path: string } | null>(null);
   if (!slice) return null;
   const valid = Object.values(settings).every(Number.isFinite)
     && settings.full_until >= 0 && settings.free_from > settings.full_until && settings.strength >= 0;
+  const chainEditsPending = chainSelectionDirty(slice, selectedChains);
   const ranges = {
     full: `z < ${settings.full_until} Å`,
     transition: `${settings.full_until} ≤ z < ${settings.free_from} Å`,
@@ -57,8 +60,9 @@ export function RestraintPanel() {
         ))}
       </div>
       {!valid && <p className="restraint-note" role="alert">Use 0 ≤ full boundary &lt; free boundary and a nonnegative strength.</p>}
+      {chainEditsPending && <p className="restraint-note" role="alert">Apply the pending chain selection before generating restraints.</p>}
       {slice.statistics.output_atoms === 0 && <p className="restraint-note">The slice is empty. Adjust the slice settings first.</p>}
-      <button className="btn btn-primary" disabled={busy || !valid || slice.statistics.output_atoms === 0}
+      <button className="btn btn-primary" disabled={busy || !valid || chainEditsPending || slice.statistics.output_atoms === 0}
         onClick={() => generateRestraints()}>
         {result ? "Regenerate restraints" : "Generate & preview restraints"}
       </button>

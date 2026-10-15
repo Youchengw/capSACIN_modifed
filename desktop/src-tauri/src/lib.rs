@@ -240,6 +240,11 @@ async fn run_slice(app: AppHandle, params: serde_json::Value) -> PendingResult {
 }
 
 #[tauri::command]
+async fn apply_chain_selection(app: AppHandle, params: serde_json::Value) -> PendingResult {
+    call_sidecar(&app, "apply_chain_selection", params).await
+}
+
+#[tauri::command]
 async fn generate_restraints(app: AppHandle, params: serde_json::Value) -> PendingResult {
     call_sidecar(&app, "generate_restraints", params).await
 }
@@ -387,6 +392,7 @@ pub fn run() {
             prepare_preview,
             prepare_all_previews,
             run_slice,
+            apply_chain_selection,
             generate_restraints,
             save_restraints_dialog,
             cancel_operation,

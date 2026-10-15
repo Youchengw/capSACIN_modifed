@@ -17,10 +17,61 @@ import MDAnalysis as md
 import numpy as np
 
 from capsacin.pipeline import CapsidPipeline
-from capsacin.protocol import SliceRequest, LoadResult, PDBInfoResult, PipelineCancelledError
+from capsacin.protocol import (
+    SliceRequest, LoadResult, PDBInfoResult, CleanupResult,
+    PipelineCancelledError,
+)
 from capsacin import findSymmetryAxes
 
-from .mmcif_writer import write_aligned_mmcif, write_sliced_mmcif
+from .mmcif_writer import write_aligned_mmcif, write_sliced_mmcif, _viewer_asym_id
+
+
+def _chain_catalog(chains, orig_chains, selected_indices, weight_selected_indices=None):
+    """Summarize aligned chains in stable viewer identity and z order."""
+    selected = {int(value) for value in selected_indices}
+    weight_selected = (
+        selected if weight_selected_indices is None
+        else {int(value) for value in weight_selected_indices}
+    )
+    rows = []
+    for raw_index, group in chains.groupby("viewer_chain_index", sort=False):
+        index = int(raw_index)
+        z = group.z.astype(float)
+        artificial_chain = group.chain.iloc[0]
+        chain_id = _viewer_asym_id(artificial_chain, orig_chains, index)
+        frame = index // len(orig_chains) if orig_chains else 0
+        original_chain = orig_chains[index % len(orig_chains)] if orig_chains else str(artificial_chain)
+        rows.append({
+            "id": chain_id,
+            "source_index": index,
+            "frame": frame,
+            "original_chain_id": original_chain,
+            "z_min": round(float(z.min()), 3),
+            "z_mean": round(float(z.mean()), 3),
+            "z_max": round(float(z.max()), 3),
+            "atom_count": int(len(group)),
+            "residue_count": int(group.resids.nunique()),
+            "selected": index in selected,
+            "selected_by_weight": index in weight_selected,
+        })
+    return sorted(rows, key=lambda row: (-row["z_mean"], row["id"]))
+
+
+def _write_chain_selection_source(path, chains, orig_chains, metadata):
+    """Persist the already-aligned full capsid for fast chain-only edits."""
+    import pickle
+    with Path(path).open("wb") as handle:
+        pickle.dump({
+            "chains": chains,
+            "orig_chains": list(orig_chains),
+            "metadata": metadata,
+        }, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+
+def _read_chain_selection_source(path):
+    import pickle
+    with Path(path).open("rb") as handle:
+        return pickle.load(handle)
 
 
 def handle_inspect_structure(
@@ -382,6 +433,33 @@ def handle_run_slice(
 
     result = pipeline.run_full(request)
 
+    selected_indices = {
+        int(value) for value in result.viewer_chains.viewer_chain_index.unique()
+    } if result.viewer_chains is not None and len(result.viewer_chains) else set()
+    chain_source_path = str(workspace / "aligned_chain_candidates.pkl")
+    chain_metadata = {
+        "input_atoms": result.input_atoms,
+        "input_residues": result.input_residues,
+        "input_chains": result.input_chains,
+        "axis": list(result.axis_dir),
+        "diagnostics": result.diagnostics,
+        "warnings": result.log_lines,
+        "weight_selected_indices": sorted(selected_indices),
+        "source_stem": Path(result.output_pdb_path).stem,
+    }
+    _write_chain_selection_source(
+        chain_source_path,
+        result.candidate_chains,
+        pipeline._orig_chains,
+        chain_metadata,
+    )
+    chain_candidates = _chain_catalog(
+        result.candidate_chains,
+        pipeline._orig_chains,
+        selected_indices,
+        selected_indices,
+    )
+
     # Generate sliced viewer mmCIF
     sliced_cif_path = str(workspace / "sliced_preview.cif")
     try:
@@ -398,6 +476,8 @@ def handle_run_slice(
         "output_pdb_path": result.output_pdb_path,
         "sliced_cif_path": sliced_cif_path,
         "workspace_path": str(workspace),
+        "chain_source_path": chain_source_path,
+        "chain_candidates": chain_candidates,
         "statistics": {
             "input_atoms": result.input_atoms,
             "output_atoms": result.output_atoms,
@@ -410,6 +490,93 @@ def handle_run_slice(
         "axis": [round(float(v), 6) for v in result.axis_dir],
         "diagnostics": result.diagnostics,
         "warnings": result.log_lines,
+    }
+
+
+def handle_apply_chain_selection(
+    params: dict,
+    workspace_base: Path | None = None,
+    progress: Callable[[str, float, str], None] | None = None,
+    cancel: threading.Event | None = None,
+) -> dict:
+    """Export a final surface model from selected aligned full chains."""
+    source_path = Path(params["chain_source_path"])
+    selected_indices = sorted({int(value) for value in params.get("selected_chain_indices", [])})
+    if not selected_indices:
+        raise ValueError("Select at least one chain for the surface model.")
+    if progress:
+        progress("chain_selection", 0.0, "Applying chain selection…")
+    if cancel is not None and cancel.is_set():
+        raise PipelineCancelledError("Pipeline cancelled by user.")
+
+    payload = _read_chain_selection_source(source_path)
+    chains = payload["chains"]
+    orig_chains = payload["orig_chains"]
+    metadata = payload["metadata"]
+    available = {int(value) for value in chains.viewer_chain_index.unique()}
+    unknown = set(selected_indices) - available
+    if unknown:
+        raise ValueError(f"Unknown chain selection indices: {sorted(unknown)}")
+
+    selected = chains[
+        chains.viewer_chain_index.astype(int).isin(selected_indices)
+    ].copy()
+    workspace = _get_workspace(workspace_base, "chain_selection")
+    output_path = workspace / f"{metadata['source_stem']}-chain-edited.pdb"
+    pipeline = CapsidPipeline(cancel_event=cancel)
+    finalized = pipeline.finalize_and_write(
+        CleanupResult(
+            cleaned_chains=selected,
+            fragmented_chains_dropped=0,
+            fragmented_residues_dropped=0,
+            original_lengths=[],
+        ),
+        str(output_path),
+    )
+
+    viewer_chains = selected.copy()
+    viewer_chains["z"] = (
+        viewer_chains.z.astype(float) - viewer_chains.z.astype(float).min()
+    )
+    sliced_cif_path = str(workspace / "sliced_preview.cif")
+    write_sliced_mmcif(
+        viewer_chains,
+        sliced_cif_path,
+        orig_chains=orig_chains,
+    )
+
+    input_atoms = int(metadata["input_atoms"])
+    weight_selected = metadata.get("weight_selected_indices", [])
+    diagnostics = dict(metadata.get("diagnostics", {}))
+    diagnostics["chain_selection_applied"] = True
+    diagnostics["selected_chain_indices"] = selected_indices
+    warnings = list(metadata.get("warnings", []))
+    warnings.append(f"[chain selection] Kept {len(selected_indices)} manually selected chains.")
+    if progress:
+        progress("chain_selection", 1.0, "Chain-edited surface model ready")
+    return {
+        "output_pdb_path": finalized.output_pdb_path,
+        "sliced_cif_path": sliced_cif_path,
+        "workspace_path": str(workspace),
+        "chain_source_path": str(source_path),
+        "chain_candidates": _chain_catalog(
+            chains, orig_chains, selected_indices, weight_selected,
+        ),
+        "statistics": {
+            "input_atoms": input_atoms,
+            "output_atoms": finalized.output_atoms,
+            "input_residues": int(metadata["input_residues"]),
+            "output_residues": finalized.output_residues,
+            "input_chains": int(metadata["input_chains"]),
+            "output_chains": finalized.output_chains,
+            "retained_percentage": round(
+                finalized.output_atoms / input_atoms * 100.0 if input_atoms else 0.0,
+                2,
+            ),
+        },
+        "axis": [round(float(value), 6) for value in metadata["axis"]],
+        "diagnostics": diagnostics,
+        "warnings": warnings,
     }
 
 

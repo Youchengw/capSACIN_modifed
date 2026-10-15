@@ -1298,6 +1298,7 @@ class CapsidPipeline:
                 - np.min(viewer_chains.z.astype(float))
             )
         result.viewer_chains = viewer_chains
+        result.candidate_chains = formatted.chains.copy()
 
         # Fill in pre-slice counts
         result.input_atoms = input_atoms

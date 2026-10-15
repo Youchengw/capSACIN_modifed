@@ -3,7 +3,7 @@
 export type SymmetryFold = 2 | 3 | 5;
 export type AxisMode = "auto" | "manual";
 export type DisplayMode = "original" | "sliced" | "overlay" | "restraints";
-export type OperationType = "inspect_structure" | "prepare_preview" | "prepare_all_previews" | "run_slice" | "generate_restraints";
+export type OperationType = "inspect_structure" | "prepare_preview" | "prepare_all_previews" | "run_slice" | "apply_chain_selection" | "generate_restraints";
 export type SidecarStatus = "idle" | "running" | "error" | "cancelled";
 
 // ---- Structure inspection ----
@@ -73,10 +73,26 @@ export interface RunSliceResult {
   output_pdb_path: string;
   sliced_cif_path: string;
   workspace_path: string;
+  chain_source_path: string;
+  chain_candidates: ChainCandidate[];
   statistics: SliceStatistics;
   axis: [number, number, number];
   diagnostics: Record<string, unknown>;
   warnings: string[];
+}
+
+export interface ChainCandidate {
+  id: string;
+  source_index: number;
+  frame: number;
+  original_chain_id: string;
+  z_min: number;
+  z_mean: number;
+  z_max: number;
+  atom_count: number;
+  residue_count: number;
+  selected: boolean;
+  selected_by_weight: boolean;
 }
 
 // ---- Sidecar protocol ----

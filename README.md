@@ -20,11 +20,23 @@ The app is ad-hoc signed and has not been notarized by Apple. If macOS blocks it
 1. Open a built-in or local PDB. The app automatically prepares all three folds.
 2. Switch folds to view cached previews, then adjust the slicing weight.
 3. Click **Run capSACIN** to compute the sliced structure.
-4. Inspect **Original**, **Sliced**, or **Overlay**, then choose **Save PDB As…**.
+4. In **Chain selection**, review complete chains sorted by z, add or remove chains,
+   and click **Apply chain selection** when needed.
+5. Inspect **Original**, **Sliced**, or **Overlay**, then choose **Save PDB As…**.
 
 Axis or ROI changes require refreshed previews. Manual Reference mode prepares the selected fold. The cache lasts for the currently loaded structure in the current session; startup and rendering still take time. See [release notes](RELEASE_NOTES.md).
 
 Inputs must be multi-MODEL PDBs containing spatial capsid copies with compatible atom ordering, rather than MD trajectory snapshots. Automatic detection does not expand a single asymmetric unit or accept a single-MODEL assembly as equivalent input.
+
+### Chain selection
+
+After slicing, Studio lists every complete aligned chain, including chains outside
+the weight-based result. Chain identities use `M<MODEL>_<original chain>` so they
+remain traceable to the input. The list is sorted by mean z by default and also
+shows each chain's z range; it can instead be sorted by minimum z or chain ID.
+The `ω` badge marks chains retained by the slicing weight. Select any combination
+and apply it to regenerate the final PDB and sliced preview without repeating axis
+detection or alignment. Restraint generation then uses that edited PDB.
 
 ### Restraint regions
 

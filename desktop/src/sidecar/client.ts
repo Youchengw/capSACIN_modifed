@@ -42,6 +42,13 @@ export async function runSlice(params: SliceParams): Promise<RunSliceResult> {
   return invoke<RunSliceResult>("run_slice", { params });
 }
 
+export async function applyChainSelection(params: {
+  chain_source_path: string;
+  selected_chain_indices: number[];
+}): Promise<RunSliceResult> {
+  return invoke<RunSliceResult>("apply_chain_selection", { params });
+}
+
 export async function generateRestraints(params: RestraintSettings & { input_path: string }): Promise<RestraintResult> {
   return invoke<RestraintResult>("generate_restraints", { params });
 }

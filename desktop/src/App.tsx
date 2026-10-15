@@ -4,6 +4,7 @@ import { SymmetrySelector } from "./components/ControlPanel/SymmetrySelector";
 import { WeightSlider } from "./components/ControlPanel/WeightSlider";
 import { ActionButtons } from "./components/ControlPanel/ActionButtons";
 import { ResultsSummary } from "./components/ControlPanel/ResultsSummary";
+import { ChainSelectionPanel } from "./components/ControlPanel/ChainSelectionPanel";
 import { RestraintPanel } from "./components/ControlPanel/RestraintPanel";
 import { AdvancedPanel } from "./components/ControlPanel/AdvancedPanel";
 import { ProgressBar } from "./components/common/ProgressBar";
@@ -65,6 +66,7 @@ export default function App() {
         )}
 
         <ResultsSummary />
+        <ChainSelectionPanel />
         <RestraintPanel />
         <AdvancedPanel />
       </aside>

@@ -1,3 +1,10 @@
+# Unreleased
+
+- Add post-slice chain selection using stable MODEL/chain identities.
+- Sort complete aligned chains by mean or minimum z and show each chain's z range.
+- Allow chains outside the weight cut to be added and retained chains to be removed.
+- Regenerate the final PDB and 3D preview from the selected chains before restraint generation.
+
 # capSACIN Studio v0.1.3
 
 Opening a PDB now automatically prepares the 2-fold, 3-fold, and 5-fold previews. Switching between prepared folds reuses their results and updates the 3D view without running Prepare again.

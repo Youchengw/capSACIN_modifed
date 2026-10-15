@@ -6,11 +6,15 @@ import io
 import json
 import sys
 import time
+from pathlib import Path
 
 import pandas as pd
 
 from sidecar.main import SidecarServer
-from sidecar.handlers import _get_workspace
+from sidecar.handlers import (
+    _get_workspace, _chain_catalog, _write_chain_selection_source,
+    handle_apply_chain_selection,
+)
 from sidecar.mmcif_writer import write_aligned_mmcif, write_sliced_mmcif
 
 
@@ -126,3 +130,41 @@ def test_aligned_viewer_uses_numeric_index_for_unicode_whitespace_chain(tmp_path
 
     # flat index 68 = frame 34, first original chain A
     assert " M34_A 1 42 " in output.read_text()
+
+
+def test_chain_catalog_and_manual_export_use_complete_aligned_chains(tmp_path):
+    rows = pd.DataFrame([
+        {"atom": "ATOM", "idx": "1", "type": "C", "name": "CA", "resname": "ALA",
+         "chain": "A", "resids": "1", "x": "0.000", "y": "0.000", "z": "5.000",
+         "occ": "1.00", "b": "0.00", "viewer_chain_index": "0"},
+        {"atom": "ATOM", "idx": "2", "type": "C", "name": "CB", "resname": "ALA",
+         "chain": "A", "resids": "1", "x": "1.000", "y": "0.000", "z": "7.000",
+         "occ": "1.00", "b": "0.00", "viewer_chain_index": "0"},
+        {"atom": "ATOM", "idx": "3", "type": "C", "name": "CA", "resname": "ALA",
+         "chain": "B", "resids": "1", "x": "0.000", "y": "1.000", "z": "25.000",
+         "occ": "1.00", "b": "0.00", "viewer_chain_index": "1"},
+        {"atom": "ATOM", "idx": "4", "type": "C", "name": "CB", "resname": "ALA",
+         "chain": "B", "resids": "1", "x": "1.000", "y": "1.000", "z": "27.000",
+         "occ": "1.00", "b": "0.00", "viewer_chain_index": "1"},
+    ])
+    catalog = _chain_catalog(rows, ["X"], selected_indices=[1], weight_selected_indices=[1])
+    assert [item["id"] for item in catalog] == ["M1_X", "M0_X"]
+    assert [item["z_mean"] for item in catalog] == [26.0, 6.0]
+    assert catalog[0]["selected"] is True
+    assert catalog[1]["selected"] is False
+
+    source = tmp_path / "chains.pkl"
+    _write_chain_selection_source(source, rows, ["X"], {
+        "input_atoms": 4, "input_residues": 2, "input_chains": 2,
+        "axis": [0, 0, 1], "diagnostics": {"cutoff": 20}, "warnings": [],
+        "weight_selected_indices": [1], "source_stem": "capsid",
+    })
+    result = handle_apply_chain_selection({
+        "chain_source_path": str(source), "selected_chain_indices": [0],
+    }, tmp_path)
+    assert result["statistics"]["output_atoms"] == 2
+    assert result["statistics"]["output_chains"] == 1
+    assert result["chain_candidates"][0]["selected"] is False
+    assert result["chain_candidates"][1]["selected"] is True
+    assert " M0_X 1 1 " in Path(result["sliced_cif_path"]).read_text()
+    assert " M1_X 1 1 " not in Path(result["sliced_cif_path"]).read_text()

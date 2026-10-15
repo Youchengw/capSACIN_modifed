@@ -172,6 +172,10 @@ class SliceOutput:
     # Internal viewer payload. It preserves pre-rename MODEL/chain identity and
     # is consumed by the desktop sidecar, not included in the JSON response.
     viewer_chains: Any = field(default=None, repr=False, compare=False)
+    # Internal aligned full-capsid payload used by Studio's post-slice chain
+    # editor. Unlike viewer_chains, this includes chains outside the weight cut
+    # so a user can add a complete chain without rerunning alignment.
+    candidate_chains: Any = field(default=None, repr=False, compare=False)
 
 
 # ---------------------------------------------------------------------------
