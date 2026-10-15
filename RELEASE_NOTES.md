@@ -1,10 +1,31 @@
-# Unreleased
+# capSACIN Studio v0.1.4
+
+This release adds manual chain control after slicing and during restraint review, making asymmetric capsids and larger ROI selections easier to prepare.
+
+## Changes
 
 - Add post-slice chain selection using stable MODEL/chain identities.
 - Sort complete aligned chains by mean or minimum z and show each chain's z range.
 - Allow chains outside the weight cut to be added and retained chains to be removed.
 - Regenerate the final PDB and 3D preview from the selected chains before restraint generation.
 - Select any retained chains as the red ROI overlay during restraint review, while preserving the z-based restraint calculation.
+- Avoid Rust binary stripping during release builds because current macOS/Rust toolchains can corrupt host proc-macro libraries during a clean build.
+
+## Validation
+
+- All 14 frontend tests pass.
+- TypeScript checks and the Vite production build pass.
+- The signed packaged application starts successfully and completes packaged 2-fold, 3-fold, and 5-fold smoke tests.
+
+## Downloads and requirements
+
+- `capSACIN-Studio-v0.1.4-macOS-arm64.dmg` — recommended installer.
+- `capSACIN-Studio-v0.1.4-macOS-arm64.zip` — zipped application bundle.
+- `SHA256SUMS.txt` — SHA-256 checksums for both downloads.
+
+Requires an Apple Silicon Mac and macOS 13 or later. Python and the 13 example structures are bundled; a separate Conda environment is not required.
+
+This build is ad-hoc signed and is not notarized with an Apple Developer ID. If macOS blocks the first launch, right-click the app and choose **Open**, or allow it from **System Settings → Privacy & Security**.
 
 # capSACIN Studio v0.1.3
 
