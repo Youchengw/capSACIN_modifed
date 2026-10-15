@@ -6,10 +6,10 @@ Built on [SAMPEL-Group/capSACIN](https://github.com/SAMPEL-Group/capSACIN). For 
 
 ## Download
 
-**v0.1.4 · Apple Silicon · macOS 13+**
+**v0.1.5 · Apple Silicon · macOS 13+**
 
-- [Download DMG](https://github.com/Youchengw/capSACIN_modifed/releases/download/v0.1.4/capSACIN-Studio-v0.1.4-macOS-arm64.dmg) — open and drag the app into Applications.
-- [ZIP, checksums, and release details](https://github.com/Youchengw/capSACIN_modifed/releases/tag/v0.1.4).
+- [Download DMG](https://github.com/Youchengw/capSACIN_modifed/releases/download/v0.1.5/capSACIN-Studio-v0.1.5-macOS-arm64.dmg) — open and drag the app into Applications.
+- [ZIP, checksums, and release details](https://github.com/Youchengw/capSACIN_modifed/releases/tag/v0.1.5).
 
 Python and 13 example PDBs are bundled. No separate Conda installation is needed.
 

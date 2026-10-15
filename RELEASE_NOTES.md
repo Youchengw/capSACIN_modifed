@@ -1,6 +1,27 @@
-# Unreleased
+# capSACIN Studio v0.1.5
+
+This release fixes the loss of protonated glutamate residues named `GLUP` during capsid slicing.
+
+## Changes
 
 - Preserve CHARMM `GLUP` residues throughout structure inspection, symmetry-axis preparation, slicing, and broken-residue cleanup instead of dropping them from MDAnalysis' standard `protein` selection.
+
+## Validation
+
+- All 42 Python tests pass, including new pipeline and desktop-inspection regressions for four-character `GLUP` residue names.
+- The reported AAV8 60-model case was reproduced at 2-fold and slicing weight 0.48: all 18 retained chains contain the complete 16-atom GLUP567 residue, for 9,342 output residues total.
+- All 14 frontend tests, TypeScript checks, and the Vite production build pass.
+- The signed packaged application starts successfully and completes packaged 2-fold, 3-fold, and 5-fold smoke tests.
+
+## Downloads and requirements
+
+- `capSACIN-Studio-v0.1.5-macOS-arm64.dmg` — recommended installer.
+- `capSACIN-Studio-v0.1.5-macOS-arm64.zip` — zipped application bundle.
+- `SHA256SUMS.txt` — SHA-256 checksums for both downloads.
+
+Requires an Apple Silicon Mac and macOS 13 or later. Python and the 13 example structures are bundled; a separate Conda environment is not required.
+
+This build is ad-hoc signed and is not notarized with an Apple Developer ID. If macOS blocks the first launch, right-click the app and choose **Open**, or allow it from **System Settings → Privacy & Security**.
 
 # capSACIN Studio v0.1.4
 
