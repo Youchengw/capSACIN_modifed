@@ -41,3 +41,20 @@ def workspace():
     """Temporary workspace directory that is cleaned up after each test."""
     with tempfile.TemporaryDirectory(prefix="capsacin_test_") as tmp:
         yield tmp
+
+
+@pytest.fixture
+def pdb_glup(tmp_path):
+    """Minimal PDB containing CHARMM's four-character GLUP residue name."""
+    path = tmp_path / "glup.pdb"
+    path.write_text(
+        "MODEL        1\n"
+        "ATOM      1  N   ALA A   1       0.000   0.000   0.000  1.00  0.00           N\n"
+        "ATOM      2  CA  ALA A   1       1.000   0.000   0.000  1.00  0.00           C\n"
+        "ATOM      3  N   GLUPA 567       2.000   0.000   0.000  1.00  0.00           N\n"
+        "ATOM      4  CA  GLUPA 567       3.000   0.000   0.000  1.00  0.00           C\n"
+        "ATOM      5  OE2 GLUPA 567       4.000   0.000   0.000  1.00  0.00           O\n"
+        "ATOM      6  HE2 GLUPA 567       5.000   0.000   0.000  1.00  0.00           H\n"
+        "ENDMDL\nEND\n"
+    )
+    return str(path)

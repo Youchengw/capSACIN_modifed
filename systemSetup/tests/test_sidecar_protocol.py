@@ -13,7 +13,7 @@ import pandas as pd
 from sidecar.main import SidecarServer
 from sidecar.handlers import (
     _get_workspace, _chain_catalog, _write_chain_selection_source,
-    handle_apply_chain_selection,
+    handle_apply_chain_selection, handle_inspect_structure,
 )
 from sidecar.mmcif_writer import write_aligned_mmcif, write_sliced_mmcif
 
@@ -109,6 +109,21 @@ def test_viewer_workspaces_are_unique_across_sequential_requests(tmp_path):
     assert first != second
     assert first.is_dir()
     assert second.is_dir()
+
+
+def test_structure_inspection_counts_glup_as_protein(pdb_glup):
+    """Desktop inspection must report GLUP atoms and residue 567."""
+    result = handle_inspect_structure({"input_path": pdb_glup})
+
+    assert result["total_atoms"] == 6
+    assert result["total_residues"] == 2
+    assert result["chains"] == [{
+        "id": "A",
+        "residue_count": 2,
+        "min_resid": 1,
+        "max_resid": 567,
+        "atom_count": 6,
+    }]
 
 
 def test_aligned_viewer_uses_numeric_index_for_unicode_whitespace_chain(tmp_path):

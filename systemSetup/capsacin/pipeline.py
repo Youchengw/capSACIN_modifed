@@ -22,6 +22,7 @@ import MDAnalysis as md
 from MDAnalysis.analysis import contacts
 
 from capsacin import definePlane, formatPDB, createDictionary, findSymmetryAxes
+from capsacin.selections import PROTEIN_SELECTION, protein_selection
 from capsacin.definePlane import (
     fit_plane_normal,
     select_5fold_ring,
@@ -166,7 +167,7 @@ class CapsidPipeline:
         self._emit_progress("load", 0.0)
 
         u = md.Universe(pdb_path, pdb_path)
-        orig_chains = list(np.unique(u.select_atoms("protein").chainIDs))
+        orig_chains = list(np.unique(u.select_atoms(PROTEIN_SELECTION).chainIDs))
         n_monomers = len(orig_chains)
 
         # Count total atoms and residues
@@ -174,7 +175,7 @@ class CapsidPipeline:
         total_residues = 0
         for ts in u.trajectory:
             for chain in orig_chains:
-                sel = u.select_atoms(f"protein and chainid {chain}")
+                sel = u.select_atoms(protein_selection(f"chainid {chain}"))
                 total_atoms += len(sel)
                 total_residues += len(np.unique(sel.resids))
 
@@ -369,7 +370,7 @@ class CapsidPipeline:
 
         # --- Get pointA from reference atom ---
         u.trajectory[0]  # reset trajectory
-        refPos = u.select_atoms(f"protein and index {ref_indices[0]}")
+        refPos = u.select_atoms(protein_selection(f"index {ref_indices[0]}"))
         pointA = refPos.positions[0].copy()
 
         # ==================================================================
@@ -378,17 +379,17 @@ class CapsidPipeline:
         if auto_mode and len(ref_indices) >= 3 and len(ref_frames) >= 3:
             # pointB from second detected monomer
             u.trajectory[ref_frames[1]]
-            refPosB_md = u.select_atoms(f"protein and index {ref_indices[1]}")
+            refPosB_md = u.select_atoms(protein_selection(f"index {ref_indices[1]}"))
             pointB = refPosB_md.positions[0].copy()
 
             # pointC from third detected monomer
             u.trajectory[ref_frames[2]]
-            refPosC_md = u.select_atoms(f"protein and index {ref_indices[2]}")
+            refPosC_md = u.select_atoms(protein_selection(f"index {ref_indices[2]}"))
             pointC = refPosC_md.positions[0].copy()
 
             # Return to first monomer for pointA
             u.trajectory[ref_frames[0]]
-            refPosA_md = u.select_atoms(f"protein and index {ref_indices[0]}")
+            refPosA_md = u.select_atoms(protein_selection(f"index {ref_indices[0]}"))
             pointA = refPosA_md.positions[0].copy()
 
             if legacy_plane_heuristic:
@@ -469,7 +470,7 @@ class CapsidPipeline:
             # Need to build chains DataFrame first for candidate matching
             # We'll build a temporary chains-like structure for candidate selection
             u.trajectory[0]  # reset
-            refPos = u.select_atoms(f"protein and index {ref_indices[0]}")
+            refPos = u.select_atoms(protein_selection(f"index {ref_indices[0]}"))
 
             # Build candidate coordinates by extracting matching atoms across all frames
             candidate_atom_list = []
@@ -477,7 +478,7 @@ class CapsidPipeline:
             candidate_chain_list = []
             for ts in u.trajectory:
                 for chain in orig_chains:
-                    virus = u.select_atoms(f"protein and chainid {chain}")
+                    virus = u.select_atoms(protein_selection(f"chainid {chain}"))
                     for atom_pos, atom_idx, atom_name, atom_resname, atom_resid in zip(
                         virus.positions, np.arange(len(virus)), virus.names,
                         virus.resnames, virus.resids,
@@ -624,7 +625,9 @@ class CapsidPipeline:
         for ts in tqdm(u.trajectory, desc="Extracting coordinates"):
             self._check_cancelled()
             for chain in orig_chains:
-                virus_coords = u.select_atoms(f"protein and chainid {chain}").positions
+                virus_coords = u.select_atoms(
+                    protein_selection(f"chainid {chain}")
+                ).positions
                 all_coords.append(virus_coords)
 
         built_virus = np.vstack(all_coords)
@@ -644,7 +647,7 @@ class CapsidPipeline:
         len_chain = []
 
         for j, chain in enumerate(orig_chains):
-            virus = u.select_atoms(f"protein and chainid {chain}")
+            virus = u.select_atoms(protein_selection(f"chainid {chain}"))
             resids_list.append(virus.resids)
             resnames_list.append(virus.resnames)
             bfactors_list.append(virus.tempfactors)

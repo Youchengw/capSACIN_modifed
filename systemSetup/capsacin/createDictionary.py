@@ -1,14 +1,19 @@
 import itertools
 
+from capsacin.selections import ADDITIONAL_PROTEIN_RESNAMES, protein_selection
+
 def createDictionary(u):
     aminoAcids = ["ALA","ARG","ASN","ASP","CYS","GLU","GLN",
                   "GLY","HIS","ILE","LEU","LYS","MET","PHE",
-                  "PRO","SER","THR","TRP","TYR","VAL"]
+                  "PRO","SER","THR","TRP","TYR","VAL",
+                  *ADDITIONAL_PROTEIN_RESNAMES]
     
     counts = []
     for i in aminoAcids:
         try:
-            atoms = len(u.select_atoms("protein and resname {} and chainid A".format(i)).split("residue")[0].positions)
+            atoms = len(u.select_atoms(
+                protein_selection(f"resname {i}", "chainid A")
+            ).split("residue")[0].positions)
         except (IndexError, AttributeError, ValueError):
             atoms = 0
         counts.append(atoms)

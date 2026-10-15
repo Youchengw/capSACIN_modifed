@@ -17,6 +17,7 @@ import MDAnalysis as md
 import numpy as np
 
 from capsacin.pipeline import CapsidPipeline
+from capsacin.selections import PROTEIN_SELECTION, protein_selection
 from capsacin.protocol import (
     SliceRequest, LoadResult, PDBInfoResult, CleanupResult,
     PipelineCancelledError,
@@ -103,7 +104,7 @@ def handle_inspect_structure(
 
 
 def _inspect_universe(u, input_path, progress=None, totals=None):
-    orig_chains = list(np.unique(u.select_atoms("protein").chainIDs))
+    orig_chains = list(np.unique(u.select_atoms(PROTEIN_SELECTION).chainIDs))
     n_models = u.trajectory.n_frames
 
     if progress:
@@ -116,7 +117,7 @@ def _inspect_universe(u, input_path, progress=None, totals=None):
     total_residues = 0
 
     for chain in orig_chains:
-        sel = u.select_atoms(f"protein and chainid {chain}")
+        sel = u.select_atoms(protein_selection(f"chainid {chain}"))
         resids = sel.resids
         if len(resids) > 0:
             min_r = int(np.min(resids))
@@ -138,7 +139,7 @@ def _inspect_universe(u, input_path, progress=None, totals=None):
     if totals is None:
         for ts in u.trajectory:
             for chain in orig_chains:
-                sel = u.select_atoms(f"protein and chainid {chain}")
+                sel = u.select_atoms(protein_selection(f"chainid {chain}"))
                 total_atoms += len(sel)
                 total_residues += len(np.unique(sel.resids))
     else:

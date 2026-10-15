@@ -27,6 +27,7 @@ import numpy as np
 import MDAnalysis as md
 from MDAnalysis.analysis import contacts
 from capsacin.definePlane import fit_plane_normal, select_5fold_ring
+from capsacin.selections import PROTEIN_SELECTION, protein_selection
 
 
 # ---------------------------------------------------------------------------
@@ -57,7 +58,7 @@ def compute_capsid_center(universe):
     """
     all_positions = []
     for ts in universe.trajectory:
-        protein = universe.select_atoms("protein")
+        protein = universe.select_atoms(PROTEIN_SELECTION)
         all_positions.append(protein.positions)
     stacked = np.vstack(all_positions)
     return stacked.mean(axis=0)
@@ -84,7 +85,7 @@ def compute_monomer_coms(universe):
     """
     coms = []
     for ts in universe.trajectory:
-        protein = universe.select_atoms("protein")
+        protein = universe.select_atoms(PROTEIN_SELECTION)
         coms.append(protein.positions.mean(axis=0))
     return np.array(coms)
 
@@ -502,7 +503,7 @@ def find_reference_atom(universe, axis, capsid_center, symmetry_type):
     all_frame_coords = []
     all_frame_atoms = []
     for ts in universe.trajectory:
-        protein = universe.select_atoms("protein")
+        protein = universe.select_atoms(PROTEIN_SELECTION)
         all_frame_coords.append(protein.positions.copy())
         # store atom metadata for matching
         all_frame_atoms.append({
@@ -526,7 +527,7 @@ def find_reference_atom(universe, axis, capsid_center, symmetry_type):
     # Candidate atoms: sample Cα atoms plus surface-exposed atoms from the
     # best-frame monomer.  Testing every atom is cheap enough (~4000 atoms).
     universe.trajectory[best_frame]
-    monomer_atoms = universe.select_atoms("protein")
+    monomer_atoms = universe.select_atoms(PROTEIN_SELECTION)
     n_atoms = len(monomer_atoms)
 
     # Build all-copies coordinate arrays for fast distance computation
@@ -754,7 +755,7 @@ def _pick_reference_atoms(universe, frames, roi_selection=None):
         universe.trajectory[frame]
         atoms = universe.select_atoms(roi_selection) if roi_selection else None
         if atoms is None or len(atoms) == 0:
-            atoms = universe.select_atoms("protein")
+            atoms = universe.select_atoms(PROTEIN_SELECTION)
 
         ca = atoms.select_atoms("name CA")
         candidates = ca if len(ca) > 0 else atoms
@@ -813,7 +814,7 @@ def select_2fold_pairs(universe, ref_idx, ref_frame, partner_frame,
     """
     # Get pointA and its atom identity
     universe.trajectory[ref_frame]
-    ref_atom = universe.select_atoms(f"protein and index {ref_idx}")
+    ref_atom = universe.select_atoms(protein_selection(f"index {ref_idx}"))
     if len(ref_atom) == 0:
         return None, {"error": f"ref_idx {ref_idx} not found in frame {ref_frame}"}
     pointA = ref_atom.positions[0].copy()
@@ -824,8 +825,9 @@ def select_2fold_pairs(universe, ref_idx, ref_frame, partner_frame,
     # Get pointA' in partner_frame
     universe.trajectory[partner_frame]
     partner_sel = (
-        f"protein and resname {ref_resname} and resid {ref_resid} "
-        f"and name {ref_name}"
+        protein_selection(
+            f"resname {ref_resname}", f"resid {ref_resid}", f"name {ref_name}"
+        )
     )
     if partner_chain_id is not None:
         partner_sel += f" and chainid {partner_chain_id}"
@@ -841,13 +843,13 @@ def select_2fold_pairs(universe, ref_idx, ref_frame, partner_frame,
     universe.trajectory[ref_frame]
     min_resid = ref_resid - 5
     max_resid = ref_resid + 5
-    candidate_sel = f"protein and resid {min_resid}:{max_resid}"
+    candidate_sel = protein_selection(f"resid {min_resid}:{max_resid}")
     if ref_chain_id is not None:
         candidate_sel += f" and chainid {ref_chain_id}"
     candidate_pool = universe.select_atoms(candidate_sel)
     # If the residue window matches nothing (unusual), widen to all protein
     if len(candidate_pool) == 0:
-        fallback_sel = "protein"
+        fallback_sel = PROTEIN_SELECTION
         if ref_chain_id is not None:
             fallback_sel += f" and chainid {ref_chain_id}"
         candidate_pool = universe.select_atoms(fallback_sel)
@@ -869,8 +871,10 @@ def select_2fold_pairs(universe, ref_idx, ref_frame, partner_frame,
         # Check B' exists in partner_frame
         universe.trajectory[partner_frame]
         b_prime_sel = (
-            f"protein and resname {atom.resname} and resid {atom.resid} "
-            f"and name {atom.name}"
+            protein_selection(
+                f"resname {atom.resname}", f"resid {atom.resid}",
+                f"name {atom.name}"
+            )
         )
         if partner_chain_id is not None:
             b_prime_sel += f" and chainid {partner_chain_id}"
@@ -1134,7 +1138,7 @@ def list_axes(universe, symmetry_type, roi_selection=None, roi_frame=0,
                 universe, ax, capsid_center, symmetry_type
             )
             universe.trajectory[0]
-            ref_atom = universe.select_atoms(f"protein and index {ref_idx}")
+            ref_atom = universe.select_atoms(protein_selection(f"index {ref_idx}"))
             chain_id = ref_atom.chainIDs[0] if len(ref_atom) > 0 else "?"
 
         results.append({

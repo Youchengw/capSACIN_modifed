@@ -1,3 +1,7 @@
+# Unreleased
+
+- Preserve CHARMM `GLUP` residues throughout structure inspection, symmetry-axis preparation, slicing, and broken-residue cleanup instead of dropping them from MDAnalysis' standard `protein` selection.
+
 # capSACIN Studio v0.1.4
 
 This release adds manual chain control after slicing and during restraint review, making asymmetric capsids and larger ROI selections easier to prepare.

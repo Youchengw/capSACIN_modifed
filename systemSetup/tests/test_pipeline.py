@@ -44,6 +44,19 @@ class TestCapsidPipeline:
         # 1k3v has 258,360 atoms (60 frames x 2 chains x ~2153 atoms)
         assert result.total_atoms == 258360
 
+    def test_glup_is_preserved_as_a_protein_residue(self, pdb_glup):
+        """CHARMM GLUP atoms must survive loading and PDB extraction."""
+        pipeline = CapsidPipeline()
+        loaded = pipeline.load_structure(pdb_glup)
+        extracted = pipeline.extract_pdb_info()
+
+        assert loaded.total_atoms == 6
+        assert loaded.total_residues == 2
+        glup = extracted.chains[extracted.chains.resname == "GLUP"]
+        assert len(glup) == 4
+        assert set(glup.resids.astype(int)) == {567}
+        assert extracted.amino_acid_checks["GLUP"] == 4
+
     def test_detect_axis_auto_5fold(self, pdb_9jjh):
         """Auto-detection finds 5-fold axes for 9jjh."""
         p = CapsidPipeline()
